@@ -6,8 +6,11 @@ include_directories("include")
 
 # find mpi
 find_package(MPI REQUIRED)
+message(STATUS "Find MPI")
 include_directories(SYSTEM ${MPI_INCLUDE_PATH})
-list(APPEND DGS_EXTERNAL_LIB ${MPI_C_LIBRARIES})
+message(STATUS "Set MPI Include Files: ${MPI_INCLUDE_PATH}")
+list(APPEND DGS_EXTERNAL_LIB ${MPI_LIBRARIES})
+message(STATUS "Set MPI Library: ${MPI_LIBRARIES}")
 
 # find torch
 file(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/scripts/find_torch.py FIND_TORCH_PY)
