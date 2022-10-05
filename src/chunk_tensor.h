@@ -13,19 +13,19 @@ class ChunkTensor : public torch::CustomClassHolder {
  public:
   ChunkTensor(torch::Tensor data, int64_t capacity_per_gpu) {
     int64_t local_rank = mpi::local_rank;
+    num_paritions_ = mpi::global_comm_size;
 
     total_tensor_size_ = data.numel();
     type_ = torch::typeMetaToScalarType(data.dtype());
     type_size_t_ = utils::_getTensorTypeSizeOf(type_);
     partion_device_tensor_size_ = capacity_per_gpu / type_size_t_;
-    threshold_ = partion_device_tensor_size_ * mpi::global_comm_size;
-    uva_device_ptrs_.resize(mpi::global_comm_size);
+    threshold_ = partion_device_tensor_size_ * num_paritions_;
+    uva_device_ptrs_.resize(num_paritions_);
 
     if (threshold_ > total_tensor_size_) {
       threshold_ = total_tensor_size_;
       partion_device_tensor_size_ =
-          (total_tensor_size_ + mpi::global_comm_size - 1) /
-          mpi::global_comm_size;
+          (total_tensor_size_ + num_paritions_ - 1) / num_paritions_;
     }
 
     // cudaMallocHost for uva_host_ptr_
@@ -55,11 +55,11 @@ class ChunkTensor : public torch::CustomClassHolder {
 
     // Context IPC for uva_device_ptrs_
     cudaIpcMemHandle_t ipc_device_mem_handle;
-    cudaIpcMemHandle_t ipc_device_mem_handle_recvbuff[mpi::global_comm_size];
+    cudaIpcMemHandle_t ipc_device_mem_handle_recvbuff[num_paritions_];
     CUDA_CALL(cudaIpcGetMemHandle(&ipc_device_mem_handle, uva_device_ptr));
     MPI_Allgather(&ipc_device_mem_handle, sizeof(cudaIpcMemHandle_t), MPI_CHAR,
                   ipc_device_mem_handle_recvbuff,
-                  sizeof(cudaIpcMemHandle_t) * mpi::global_comm_size, MPI_CHAR,
+                  sizeof(cudaIpcMemHandle_t) * num_paritions_, MPI_CHAR,
                   mpi::global_comm);
 
     // after communication, setup uva_device_ptrs_;
@@ -109,6 +109,7 @@ class ChunkTensor : public torch::CustomClassHolder {
   int64_t total_tensor_size_;
 
   int64_t threshold_;
+  int64_t num_paritions_;
 
   void *uva_host_ptr_ = nullptr;
   thrust::host_vector<void *> uva_device_ptrs_;
