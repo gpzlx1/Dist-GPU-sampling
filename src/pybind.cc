@@ -20,5 +20,6 @@ TORCH_LIBRARY(dgs_ops, m) {
       .def("_CAPI_test_chunk_tensor", &test_chunk_tensor)
       .def("_CAPI_get_rank", &mpi::GetRank)
       .def("_CAPI_get_size", &mpi::GetSize)
-      .def("_CAPI_tensor_relabel", &TensorRelabel);
+      .def("_CAPI_tensor_relabel", &TensorRelabel)
+      .def("_CAPI_sample_neighbors", &RowWiseSamplingUniform);
 }
