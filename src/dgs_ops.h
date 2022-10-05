@@ -5,7 +5,7 @@
 
 namespace dgs {
 void hello_world_from_gpu(int64_t thread_num);
-void test_chunk_tensor(c10::intrusive_ptr<ChunkTensor> c_tensor);
+void test_chunk_tensor(c10::intrusive_ptr<ChunkTensor> c_tensor, int64_t mode);
 }  // namespace dgs
 
 #endif

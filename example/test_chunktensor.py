@@ -24,4 +24,8 @@ c_tensor = torch.classes.dgs_classes.ChunkTensor(data, 32)
 print(c_tensor._CAPI_get_host_tensor())
 print(c_tensor._CAPI_get_sub_device_tensor())
 
+if dist.get_rank() == 0:
+    torch.ops.dgs_ops._CAPI_test_chunk_tensor(c_tensor, 0)
+    torch.ops.dgs_ops._CAPI_test_chunk_tensor(c_tensor, 1)
+    torch.ops.dgs_ops._CAPI_test_chunk_tensor(c_tensor, 0)
 torch.ops.dgs_ops._CAPI_finalize()
