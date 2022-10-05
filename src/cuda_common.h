@@ -21,6 +21,19 @@
     }                                                                    \
   }
 
+#define DGS_ID_TYPE_SWITCH(val, IdType, ...)         \
+  do {                                               \
+    if ((val) == torch::kInt32) {                    \
+      typedef int32_t IdType;                        \
+      { __VA_ARGS__ }                                \
+    } else if ((val) == torch::kInt64) {             \
+      typedef int64_t IdType;                        \
+      { __VA_ARGS__ }                                \
+    } else {                                         \
+      LOG(FATAL) << "ID can only be int32 or int64"; \
+    }                                                \
+  } while (0);
+
 #define MIN(x, y) ((x < y) ? x : y)
 
 #endif
