@@ -16,44 +16,46 @@ namespace dgs {
 class ChunkTensor : public torch::CustomClassHolder {
  public:
   ChunkTensor(torch::Tensor data, int64_t capacity_per_gpu) {
-    tensor_size_in_btye_ = utils::_getTensorSizeInByte(data);
     int64_t local_rank = mpi::local_rank;
 
+    total_tensor_size_ = data.numel();
     type_ = torch::typeMetaToScalarType(data.dtype());
-    capacity_per_gpu_ = capacity_per_gpu;
-    threshold_ = capacity_per_gpu_ * mpi::global_comm_size;
+    type_size_t_ = utils::_getTensorTypeSizeOf(type_);
+    partion_device_tensor_size_ = capacity_per_gpu / type_size_t_;
+    threshold_ = partion_device_tensor_size_ * mpi::global_comm_size;
     uva_device_ptrs_.resize(mpi::global_comm_size);
 
-    // cudaIpcGetMemHandle not support host_ptr. Therefore, just alias here.
-    uva_host_ptr_ = utils::_getTensorVoidDataPtr(data);
-
-    /*
-    if (local_rank == 0) {
-      CUDA_CALL(cudaMallocHost(&uva_host_ptr_, tensor_size_in_btye_));
-      CUDA_CALL(cudaMemcpy(uva_host_ptr_,
-    utils::_getTensorVoidDataPtr(data), tensor_size_in_btye_,
-    cudaMemcpyHostToHost));
+    if (threshold_ > total_tensor_size_) {
+      threshold_ = total_tensor_size_;
+      partion_device_tensor_size_ =
+          (total_tensor_size_ + mpi::global_comm_size - 1) /
+          mpi::global_comm_size;
     }
 
-    // Context IPC for uva_host_ptr_
-    cudaIpcMemHandle_t ipc_host_mem_handle;
-    if (local_rank == 0) {
-      CUDA_CALL(cudaIpcGetMemHandle(&ipc_host_mem_handle, uva_host_ptr_));
+    // cudaMallocHost for uva_host_ptr_
+    if (threshold_ < total_tensor_size_) {
+      CUDA_CALL(
+          cudaMallocHost(&uva_host_ptr_, total_tensor_size_ * type_size_t_));
+      CUDA_CALL(cudaMemcpy(uva_host_ptr_, utils::_getTensorVoidDataPtr(data),
+                           total_tensor_size_ * type_size_t_,
+                           cudaMemcpyHostToHost));
+    } else {
+      // Dist-Graph has been fully stored on GPUs. So, we no need to
+      // cudaMallocHost for uva_host_ptr_
+      uva_host_ptr_ = nullptr;
     }
-    MPI_Bcast(&ipc_host_mem_handle, sizeof(cudaIpcMemHandle_t), MPI_CHAR, 0,
-              mpi::global_comm);
-    if (local_rank != 0) {
-      cudaIpcOpenMemHandle(&uva_host_ptr_, ipc_host_mem_handle,
-                           cudaIpcMemLazyEnablePeerAccess);
-    }
-    */
 
     void *uva_device_ptr = nullptr;
-    CUDA_CALL(cudaMalloc(&uva_device_ptr, capacity_per_gpu_));
-    CUDA_CALL(cudaMemcpy(uva_device_ptr,
-                         reinterpret_cast<char *>(uva_host_ptr_) +
-                             local_rank * capacity_per_gpu_,
-                         capacity_per_gpu_, cudaMemcpyHostToDevice));
+    size_t each_partion_size_t = partion_device_tensor_size_ * type_size_t_;
+    CUDA_CALL(cudaMalloc(&uva_device_ptr, each_partion_size_t));
+    CUDA_CALL(cudaMemset(uva_device_ptr, -1, each_partion_size_t));
+    CUDA_CALL(cudaMemcpy(
+        uva_device_ptr,
+        reinterpret_cast<char *>(utils::_getTensorVoidDataPtr(data)) +
+            local_rank * each_partion_size_t,
+        MIN(each_partion_size_t, total_tensor_size_ * type_size_t_ -
+                                     local_rank * each_partion_size_t),
+        cudaMemcpyHostToDevice));
 
     // Context IPC for uva_device_ptrs_
     cudaIpcMemHandle_t ipc_device_mem_handle;
@@ -79,30 +81,40 @@ class ChunkTensor : public torch::CustomClassHolder {
   ~ChunkTensor() { Free(); }
 
   torch::Tensor GetHostTensor() {
-    return torch::from_blob(
-        uva_host_ptr_,
-        tensor_size_in_btye_ / utils::_getTensorTypeSizeOf(type_),
-        torch::TensorOptions().device(torch::kCPU).dtype(type_));
+    if (uva_host_ptr_ != nullptr) {
+      return torch::from_blob(
+          uva_host_ptr_, total_tensor_size_,
+          torch::TensorOptions().device(torch::kCPU).dtype(type_));
+    } else {
+      printf("No uva_host_ptr is needed for this data!\n");
+      return torch::Tensor();
+    }
   }
 
   torch::Tensor GetSubDeviceTensor() {
     return torch::from_blob(
-        uva_device_ptrs_[mpi::local_rank],
-        capacity_per_gpu_ / utils::_getTensorTypeSizeOf(type_),
+        uva_device_ptrs_[mpi::local_rank], partion_device_tensor_size_,
         torch::TensorOptions().dtype(type_).device(torch::kCUDA));
   }
 
   void Free() {
     int local_rank = mpi::local_rank;
-    cudaFree(uva_device_ptrs_[local_rank]);
+    if (uva_host_ptr_ != nullptr) {
+      CUDA_CALL(cudaFree(uva_host_ptr_));
+    }
+    CUDA_CALL(cudaFree(uva_device_ptrs_[local_rank]));
   }
 
   torch::Dtype type_;
-  int64_t tensor_size_in_btye_;
-  int64_t capacity_per_gpu_;
+  // sizoef(type_)
+  int64_t type_size_t_;
+
+  int64_t partion_device_tensor_size_;
+  int64_t total_tensor_size_;
+
   int64_t threshold_;
 
-  void *uva_host_ptr_;
+  void *uva_host_ptr_ = nullptr;
   thrust::host_vector<void *> uva_device_ptrs_;
 };
 }  // namespace dgs
