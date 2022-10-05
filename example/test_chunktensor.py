@@ -1,4 +1,8 @@
 import torch
+import torch.distributed as dist
+
+dist.init_process_group(backend='nccl')
+torch.cuda.set_device(dist.get_rank())
 
 torch.ops.load_library("./build/libdgs.so")
 
