@@ -16,5 +16,7 @@ TORCH_LIBRARY(dgs_classes, m) {
 TORCH_LIBRARY(dgs_ops, m) {
   m.def("_CAPI_hello_world", &hello_world_from_gpu)
       .def("_CAPI_initialize", &mpi::Initialize)
-      .def("_CAPI_finalize", &mpi::Finalize);
+      .def("_CAPI_finalize", &mpi::Finalize)
+      .def("_CAPI_get_rank", &mpi::GetRank)
+      .def("_CAPI_get_size", &mpi::GetSize);
 }

@@ -12,6 +12,8 @@ extern MPI_Comm global_comm;
 
 void Initialize();
 void Finalize();
+int64_t GetRank();
+int64_t GetSize();
 
 }  // namespace mpi
 }  // namespace dgs

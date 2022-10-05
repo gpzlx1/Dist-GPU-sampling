@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <torch/script.h>
+
 #include "./mpi_context.h"
 
 namespace dgs {
@@ -30,6 +33,10 @@ void Finalize() {
     global_comm = MPI_COMM_NULL;
   }
 }
+
+int64_t GetRank() { return local_rank; }
+
+int64_t GetSize() { return global_comm_size; }
 
 }  // namespace mpi
 }  // namespace dgs
