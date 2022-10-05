@@ -25,13 +25,20 @@ print(indices)
 print(seeds)
 
 # cache 320 / 4 = 80 int
-chunk_indptr = torch.classes.dgs_classes.ChunkTensor(indptr, 320)
-chunk_indices = torch.classes.dgs_classes.ChunkTensor(indices, 320)
+chunk_indptr = torch.classes.dgs_classes.ChunkTensor(indptr, 500)
+print(chunk_indptr._CAPI_get_host_tensor())
+print(chunk_indptr._CAPI_get_sub_device_tensor())
+
+chunk_indices = torch.classes.dgs_classes.ChunkTensor(indices, 500)
+print(chunk_indices._CAPI_get_host_tensor())
+print(chunk_indices._CAPI_get_sub_device_tensor())
 
 print("begin")
 
 for fan_out in [5]:
-    coo_row, coo_col = torch.ops.dgs_ops._CAPI_sample_neighbors_with_chunk_tensor(
-        seeds, chunk_indptr, chunk_indices, fan_out, False)
+    coo_row, coo_col = torch.ops.dgs_ops._CAPI_sample_neighbors(
+        seeds, indptr, indices, fan_out, False)
+    seeds, (coo_row, coo_col) = torch.ops.dgs_ops._CAPI_tensor_relabel(
+        [seeds, coo_col], [coo_row, coo_col])
 
 torch.ops.dgs_ops._CAPI_finalize()
