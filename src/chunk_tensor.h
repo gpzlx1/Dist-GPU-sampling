@@ -67,25 +67,12 @@ class ChunkTensor : public torch::CustomClassHolder {
     cudaFree(ipc_device_mem_handle_recvbuff);
   };
 
-  torch::Tensor operator[](int64_t index) const {}
-
-  // for test
-  ChunkTensor(torch::Tensor data) : data_(data){};
-
-  // for test
-  torch::Tensor GetData() const { return data_; };
-
-  // for test
-  int64_t GetGlobalData() const { return mpi::global_data; };
-
  private:
   torch::Tensor data_;
   int64_t threshold_;
 
   void *uva_host_ptr_;
   thrust::host_vector<void *> uva_device_ptrs_;
-
-  std::vector<cudaIpcMemHandle_t> all_ipc_handle;
 };
 }  // namespace dgs
 #endif

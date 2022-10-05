@@ -6,7 +6,6 @@
 namespace dgs {
 namespace mpi {
 
-extern int global_data;
 extern int global_comm_size;
 extern int local_rank;
 extern MPI_Comm global_comm;
