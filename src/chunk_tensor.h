@@ -96,7 +96,7 @@ class ChunkTensor : public torch::CustomClassHolder {
   void Free() {
     int local_rank = mpi::local_rank;
     if (uva_host_ptr_ != nullptr) {
-      CUDA_CALL(cudaFree(uva_host_ptr_));
+      CUDA_CALL(cudaFreeHost(uva_host_ptr_));
     }
     CUDA_CALL(cudaFree(uva_device_ptrs_[local_rank]));
   }
