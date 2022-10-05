@@ -173,12 +173,15 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
   CUDA_CALL(
       cudaMalloc(&d_indices_wrapper_ptr, sizeof(chunk_tensor_wrapper<IdType>)));
 
-  CUDA_CALL(cudaMemcpy(d_indptr_wrapper_ptr, &h_indptr_wrapper,
-                       sizeof(chunk_tensor_wrapper<IdType>),
-                       cudaMemcpyHostToDevice));
-  CUDA_CALL(cudaMemcpy(d_indices_wrapper_ptr, &h_indices_wrapper,
-                       sizeof(chunk_tensor_wrapper<IdType>),
-                       cudaMemcpyHostToDevice));
+  cudaStream_t curr_stream = torch::cuda::getCurrentCUDAStream();
+  cudaStream_t aux_stream = torch::cuda::getStreamFromPool();
+
+  CUDA_CALL(cudaMemcpyAsync(d_indptr_wrapper_ptr, &h_indptr_wrapper,
+                            sizeof(chunk_tensor_wrapper<IdType>),
+                            cudaMemcpyHostToDevice, curr_stream));
+  CUDA_CALL(cudaMemcpyAsync(d_indices_wrapper_ptr, &h_indices_wrapper,
+                            sizeof(chunk_tensor_wrapper<IdType>),
+                            cudaMemcpyHostToDevice, aux_stream));
 
   int num_items = seeds.numel();
   torch::Tensor sub_indptr = torch::empty(
@@ -197,6 +200,7 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
 
   const uint64_t random_seed = 7777;
   constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
+  CUDA_CALL(cudaStreamSynchronize(aux_stream));
   if (replace) {
     const dim3 block(BLOCK_SIZE);
     const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
