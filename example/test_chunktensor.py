@@ -34,7 +34,7 @@ if dist.get_rank() == 0:
     print("print")
     torch.ops.dgs_ops._CAPI_test_chunk_tensor(c_tensor, 0)
 
-time.sleep(10)
+time.sleep(3)
 
 if dist.get_rank() == 1:
     print("from rank == 1")
