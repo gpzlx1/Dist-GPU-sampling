@@ -97,7 +97,6 @@ class ChunkTensor : public torch::CustomClassHolder {
     cudaFree(uva_device_ptrs_[local_rank]);
   }
 
- private:
   torch::Dtype type_;
   int64_t tensor_size_in_btye_;
   int64_t capacity_per_gpu_;
