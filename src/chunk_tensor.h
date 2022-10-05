@@ -1,30 +1,52 @@
 #ifndef DGS_CHUNK_TENSOR_H_
 #define DGS_CHUNK_TENSOR_H_
 
+#include <cuda_runtime.h>
+#include <thrust/host_vector.h>
 #include <torch/custom_class.h>
 #include <torch/script.h>
 #include <vector>
-#include "cuda_runtime.h"
 
 #include "./mpi_context.h"
+#include "./utils.h"
 
 namespace dgs {
 
 class ChunkTensor : public torch::CustomClassHolder {
  public:
   ChunkTensor(){};
-  ChunkTensor(torch::Tensor data, int64_t total_size, int64_t local_rank,
-              int64_t capacity_per_gpu) {
+  ChunkTensor(torch::Tensor data, int64_t capacity_per_gpu) {
+    int64_t tensor_size_in_byte = utils::_getTensorSizeInByte(data);
+    int64_t local_rank = mpi::local_rank;
+    threshold_ = capacity_per_gpu * mpi::global_comm_size;
+    uva_device_ptrs_.resize(mpi::global_comm_size);
+
     if (local_rank == 0) {
-      cudaMallocHost(&all_uva_cpu_ptr, total_size);
-      for (int i = 0; i < data.size(0); i++) {
-        all_uva_cpu_ptr[i] = data[i].item().toLong();
-      }
-      threshold = capacity_per_gpu * mpi::global_comm_size;
-      if (threshold > total_size) {
-        threshold = total_size;
-      }
+      cudaMallocHost(&uva_host_ptr_, tensor_size_in_byte);
+      cudaMemcpy(uva_host_ptr_, data.data_ptr<void>(), tensor_size_in_byte,
+                 cudaMemcpyHostToHost);
     }
+
+    // Context IPC for uva_host_ptr_
+    // mpi one-to-all
+    // .... todo
+
+    void *uva_device_ptr = nullptr;
+    cudaMalloc(&uva_device_ptr, capacity_per_gpu);
+    cudaMemcpy(uva_device_ptr, uva_host_ptr_ + local_rank * capacity_per_gpu,
+               capacity_per_gpu, cudaMemcpyDefault);
+    uva_device_ptrs_[local_rank] = uva_device_ptr;
+
+    // Context IPC for uva_uva_ptrs_
+    // mpi allgather
+    // ...... todo
+
+    // after communication, setup uva_device_ptrs_;
+    for (int i = 0; i < uva_device_ptrs_.size(); i++) {
+      // uva_device_ptrs_[i] = ...;
+    }
+
+    /*
     MPI_Bcast(&all_uva_cpu_ptr, sizeof(int64_t *), MPI_CHAR, 0,
               mpi::global_comm);
     MPI_Bcast(&threshold, sizeof(int64_t), MPI_CHAR, 0, mpi::global_comm);
@@ -46,6 +68,7 @@ class ChunkTensor : public torch::CustomClassHolder {
       all_ipc_handle.push_back(ipc_handle_recv_buff[i]);
     }
     cudaFree(ipc_handle_recv_buff);
+    */
   };
 
   torch::Tensor operator[](int64_t index) const {}
@@ -61,10 +84,11 @@ class ChunkTensor : public torch::CustomClassHolder {
 
  private:
   torch::Tensor data_;
+  int64_t threshold_;
 
-  int64_t *all_uva_cpu_ptr;
-  int64_t *all_uva_ptr;
-  int64_t threshold;
+  void *uva_host_ptr_;
+  thrust::host_vector<void *> uva_device_ptrs_;
+
   std::vector<cudaIpcMemHandle_t> all_ipc_handle;
 };
 }  // namespace dgs

@@ -4,6 +4,9 @@ namespace dgs {
 namespace mpi {
 
 int global_data = 10;
+int global_comm_size;
+int local_rank;
+MPI_Comm global_comm = MPI_COMM_NULL;
 
 void Initialize() {
   int is_mpi_initialized = 0;

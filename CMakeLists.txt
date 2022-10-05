@@ -4,6 +4,11 @@ project(DGS LANGUAGES CUDA CXX)
 # set include
 include_directories("include")
 
+# find mpi
+find_package(MPI REQUIRED)
+include_directories(SYSTEM ${MPI_INCLUDE_PATH})
+list(APPEND DGS_EXTERNAL_LIB ${MPI_C_LIBRARIES})
+
 # find torch
 file(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/scripts/find_torch.py FIND_TORCH_PY)
 set(PYTHON_INTERP python)
