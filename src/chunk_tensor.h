@@ -1,11 +1,7 @@
 #ifndef DGS_CHUNK_TENSOR_H_
 #define DGS_CHUNK_TENSOR_H_
 
-#include <cuda_runtime.h>
-#include <thrust/host_vector.h>
-#include <torch/custom_class.h>
 #include <torch/script.h>
-#include <vector>
 
 #include "./cuda_common.h"
 #include "./mpi_context.h"
