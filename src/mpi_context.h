@@ -13,7 +13,6 @@ extern MPI_Comm global_comm;
 
 void Initialize();
 void Finalize();
-int GetRank();
 
 }  // namespace mpi
 }  // namespace dgs

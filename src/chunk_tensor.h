@@ -28,8 +28,16 @@ class ChunkTensor : public torch::CustomClassHolder {
     }
 
     // Context IPC for uva_host_ptr_
-    // mpi one-to-all
-    // .... todo
+    cudaIpcMemHandle_t ipc_host_mem_handle;
+    if (local_rank == 0) {
+      cudaIpcGetMemHandle(&ipc_host_mem_handle, uva_host_ptr_);
+    }
+    MPI_Bcast(&ipc_host_mem_handle, sizeof(cudaIpcMemHandle_t), MPI_CHAR, 0,
+              mpi::global_comm);
+    if (local_rank != 0) {
+      cudaIpcOpenMemHandle(&uva_host_ptr_, ipc_host_mem_handle,
+                           cudaIpcMemLazyEnablePeerAccess);
+    }
 
     void *uva_device_ptr = nullptr;
     cudaMalloc(&uva_device_ptr, capacity_per_gpu);
@@ -37,38 +45,26 @@ class ChunkTensor : public torch::CustomClassHolder {
                capacity_per_gpu, cudaMemcpyDefault);
     uva_device_ptrs_[local_rank] = uva_device_ptr;
 
-    // Context IPC for uva_uva_ptrs_
-    // mpi allgather
-    // ...... todo
+    // Context IPC for uva_device_ptrs_
+    cudaIpcMemHandle_t ipc_device_mem_handle;
+    cudaIpcMemHandle_t *ipc_device_mem_handle_recvbuff;
+    cudaIpcGetMemHandle(&ipc_device_mem_handle, uva_device_ptr);
+    cudaMallocHost(&ipc_device_mem_handle_recvbuff,
+                   mpi::global_comm_size * sizeof(cudaIpcMemHandle_t));
+    MPI_Allgather(&ipc_device_mem_handle, sizeof(cudaIpcMemHandle_t), MPI_CHAR,
+                  ipc_device_mem_handle_recvbuff,
+                  sizeof(cudaIpcMemHandle_t) * mpi::global_comm_size, MPI_CHAR,
+                  mpi::global_comm);
 
     // after communication, setup uva_device_ptrs_;
     for (int i = 0; i < uva_device_ptrs_.size(); i++) {
-      // uva_device_ptrs_[i] = ...;
+      if (i != local_rank) {
+        cudaIpcOpenMemHandle(&uva_device_ptrs_[i],
+                             ipc_device_mem_handle_recvbuff[i],
+                             cudaIpcMemLazyEnablePeerAccess);
+      }
     }
-
-    /*
-    MPI_Bcast(&all_uva_cpu_ptr, sizeof(int64_t *), MPI_CHAR, 0,
-              mpi::global_comm);
-    MPI_Bcast(&threshold, sizeof(int64_t), MPI_CHAR, 0, mpi::global_comm);
-
-    cudaMalloc(&all_uva_ptr, capacity_per_gpu);
-    cudaMemcpy(all_uva_ptr, all_uva_cpu_ptr + local_rank * capacity_per_gpu,
-               capacity_per_gpu, cudaMemcpyDefault);
-
-    cudaIpcMemHandle_t local_ipc_handle;
-    cudaIpcGetMemHandle(&local_ipc_handle, all_uva_ptr);
-    cudaIpcMemHandle_t *ipc_handle_recv_buff;
-    cudaMallocHost(&ipc_handle_recv_buff,
-                   mpi::global_comm_size * sizeof(cudaIpcMemHandle_t));
-    MPI_Allgather(&local_ipc_handle, sizeof(cudaIpcMemHandle_t), MPI_CHAR,
-                  ipc_handle_recv_buff,
-                  sizeof(cudaIpcMemHandle_t) * mpi::global_comm_size, MPI_CHAR,
-                  mpi::global_comm);
-    for (int i = 0; i < mpi::global_comm_size; i++) {
-      all_ipc_handle.push_back(ipc_handle_recv_buff[i]);
-    }
-    cudaFree(ipc_handle_recv_buff);
-    */
+    cudaFree(ipc_device_mem_handle_recvbuff);
   };
 
   torch::Tensor operator[](int64_t index) const {}
