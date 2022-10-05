@@ -26,7 +26,6 @@ print(c_tensor._CAPI_get_host_tensor())
 print(c_tensor._CAPI_get_sub_device_tensor())
 
 if dist.get_rank() == 0:
-<<<<<<< HEAD
     print("from rank == 0")
     print("print")
     torch.ops.dgs_ops._CAPI_test_chunk_tensor(c_tensor, 0)
@@ -41,9 +40,4 @@ if dist.get_rank() == 1:
     print("from rank == 1")
     torch.ops.dgs_ops._CAPI_test_chunk_tensor(c_tensor, 0)
 
-=======
-    torch.ops.dgs_ops._CAPI_test_chunk_tensor(c_tensor, 0)
-    torch.ops.dgs_ops._CAPI_test_chunk_tensor(c_tensor, 1)
-    torch.ops.dgs_ops._CAPI_test_chunk_tensor(c_tensor, 0)
->>>>>>> 940a1c9b5ca3d8234cbfa119d258d0cd92789912
 torch.ops.dgs_ops._CAPI_finalize()
