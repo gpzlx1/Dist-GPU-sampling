@@ -42,6 +42,9 @@ file(GLOB DGS_SRC
 add_library(dgs SHARED ${DGS_SRC})
 set_target_properties(dgs PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 set_target_properties(dgs PROPERTIES CUDA_STANDARD 14)
+set_target_properties(dgs PROPERTIES POSITION_INDEPENDENT_CODE ON)
+TARGET_COMPILE_OPTIONS(
+  dgs PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda>)
 
 # Enable C++14
 target_compile_features(dgs PRIVATE cxx_std_14)
