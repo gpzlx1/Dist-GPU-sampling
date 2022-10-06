@@ -17,8 +17,8 @@ if "MASTER_PORT" not in os.environ:
 
 dist.init_process_group(backend='nccl', init_method="env://")
 
-indptr = torch.arange(0, 1001).int().cuda() * 5
-indices = torch.arange(0, 5000).int().cuda()
+indptr = torch.arange(0, 1001).int() * 5
+indices = torch.arange(0, 5000).int()
 seeds = torch.randint(0, 1000, (5, )).int().cuda().unique()
 
 print(indptr)
@@ -37,8 +37,8 @@ print(chunk_indices._CAPI_get_sub_device_tensor())
 print("begin")
 
 for fan_out in [5]:
-    coo_row, coo_col = torch.ops.dgs_ops._CAPI_sample_neighbors(
-        seeds, indptr, indices, fan_out, False)
+    coo_row, coo_col = torch.ops.dgs_ops._CAPI_sample_neighbors_with_chunk_tensor(
+        seeds, chunk_indptr, chunk_indices, fan_out, False)
     frontier, (coo_row, coo_col) = torch.ops.dgs_ops._CAPI_tensor_relabel(
         [seeds, coo_col], [coo_row, coo_col])
     #block = dgl.create_block((coo_row, coo_col),
