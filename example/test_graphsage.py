@@ -14,5 +14,9 @@ print(seeds)
 for fan_out in [5]:
     coo_row, coo_col = torch.ops.dgs_ops._CAPI_sample_neighbors(
         seeds, indptr, indices, fan_out, False)
-    seeds, (coo_row, coo_col) = torch.ops.dgs_ops._CAPI_tensor_relabel(
+    frontier, (coo_row, coo_col) = torch.ops.dgs_ops._CAPI_tensor_relabel(
         [seeds, coo_col], [coo_row, coo_col])
+    #block = dgl.create_block((coo_row, coo_col),
+    #                         num_src_nodes=frontier.numel(),
+    #                         num_dst_nodes=seeds.numel())
+    frontier = seeds
