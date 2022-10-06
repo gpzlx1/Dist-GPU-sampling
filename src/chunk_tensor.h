@@ -7,7 +7,6 @@
 #include "./mpi_context.h"
 #include "./utils.h"
 
-#define CHECK_CPU(x) TORCH_CHECK(!x.device().is_cuda(), #x " must be a CPU tensor")
 
 namespace dgs {
 
@@ -74,6 +73,7 @@ class ChunkTensor : public torch::CustomClassHolder {
         uva_device_ptrs_[local_rank] = uva_device_ptr;
       }
     }
+    uva_device_ptrs_data_ = thrust::raw_pointer_cast(uva_device_ptrs_.data());
   };
 
   ~ChunkTensor() { Free(); }
@@ -114,6 +114,7 @@ class ChunkTensor : public torch::CustomClassHolder {
   int64_t num_partitions_;
 
   void *uva_host_ptr_ = nullptr;
+  void **uva_device_ptrs_data_ = nullptr;
   thrust::host_vector<void *> uva_device_ptrs_;
 };
 }  // namespace dgs

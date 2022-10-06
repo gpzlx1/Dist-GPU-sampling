@@ -7,6 +7,12 @@
 #include <thrust/host_vector.h>
 #include <vector>
 
+#define CHECK_CPU(x) \
+  TORCH_CHECK(!x.device().is_cuda(), #x " must be a CPU tensor")
+
+#define CHECK_CUDA(x) \
+  TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+
 #define CUDA_CALL(call)                                                  \
   {                                                                      \
     cudaError_t cudaStatus = call;                                       \
