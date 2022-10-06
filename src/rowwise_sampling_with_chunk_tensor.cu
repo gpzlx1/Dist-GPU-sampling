@@ -216,7 +216,7 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
   }
 
   CUDA_CALL(cudaFreeAsync(d_indptr_wrapper_ptr, curr_stream));
-  CUDA_CALL(cudaFreeAsync(d_indices_wrapper_ptr, aux_stream));
+  CUDA_CALL(cudaFreeAsync(d_indices_wrapper_ptr, curr_stream));
   return std::make_tuple(coo_row, coo_col);
 }
 
