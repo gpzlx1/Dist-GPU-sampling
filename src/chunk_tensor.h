@@ -7,11 +7,14 @@
 #include "./mpi_context.h"
 #include "./utils.h"
 
+#define CHECK_CPU(x) TORCH_CHECK(!x.device().is_cuda(), #x " must be a CPU tensor")
+
 namespace dgs {
 
 class ChunkTensor : public torch::CustomClassHolder {
  public:
   ChunkTensor(torch::Tensor data, int64_t capacity_per_gpu) {
+    CHECK_CPU(data);
     int64_t local_rank = mpi::local_rank;
     num_partitions_ = mpi::global_comm_size;
 
