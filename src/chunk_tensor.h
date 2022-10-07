@@ -7,7 +7,6 @@
 #include "./mpi_context.h"
 #include "./utils.h"
 
-
 namespace dgs {
 
 class ChunkTensor : public torch::CustomClassHolder {
@@ -100,6 +99,12 @@ class ChunkTensor : public torch::CustomClassHolder {
     if (uva_host_ptr_ != nullptr) {
       CUDA_CALL(cudaFreeHost(uva_host_ptr_));
     }
+
+    for (int i = 0; i < num_partitions_; i++) {
+      if (local_rank != i)
+        CUDA_CALL(cudaIpcCloseMemHandle(uva_device_ptrs_[i]);)
+    }
+    MPI_Barrier(mpi::global_comm);
     CUDA_CALL(cudaFree(uva_device_ptrs_[local_rank]));
   }
 
