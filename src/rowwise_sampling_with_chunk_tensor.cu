@@ -10,43 +10,6 @@
 
 namespace dgs {
 
-template <typename IdType>
-struct chunk_tensor_wrapper {
-  int64_t threshold;
-  int64_t num_partitions;
-  int64_t each_partion_size;
-  void *on_host_data_ptr;
-  void **on_device_data_ptrs;
-  cudaStream_t s;
-
-  __host__ chunk_tensor_wrapper(c10::intrusive_ptr<ChunkTensor> c_tensor,
-                                cudaStream_t stream) {
-    s = stream;
-    threshold = c_tensor->threshold_;
-    num_partitions = c_tensor->num_partitions_;
-    each_partion_size = c_tensor->partion_device_tensor_size_;
-    on_host_data_ptr = c_tensor->uva_host_ptr_;
-    CUDA_CALL(cudaMallocAsync(&on_device_data_ptrs,
-                              sizeof(void *) * num_partitions, s));
-    CUDA_CALL(cudaMemcpyAsync(
-        on_device_data_ptrs, c_tensor->uva_device_ptrs_data_,
-        sizeof(void *) * num_partitions, cudaMemcpyHostToDevice, s));
-  }
-
-  ~chunk_tensor_wrapper(){CUDA_CALL(cudaFreeAsync(on_device_data_ptrs, s))};
-
-  __host__ __device__ inline IdType At(int64_t index) {
-    if (index >= threshold) {
-      return reinterpret_cast<IdType *>(on_host_data_ptr)[index];
-    } else {
-      int partition_idx = index / each_partion_size;
-      return reinterpret_cast<IdType *>(
-          on_device_data_ptrs[partition_idx])[index - each_partion_size *
-                                                          partition_idx];
-    }
-  }
-};
-
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
@@ -147,25 +110,10 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
     torch::Tensor seeds, c10::intrusive_ptr<ChunkTensor> indptr,
     c10::intrusive_ptr<ChunkTensor> indices, int64_t num_picks, bool replace) {
   CHECK_CUDA(seeds);
-  cudaStream_t curr_stream = torch::cuda::getCurrentCUDAStream();
-  cudaStream_t aux_stream = torch::cuda::getStreamFromPool();
-
-  chunk_tensor_wrapper<IdType> h_indptr_wrapper(indptr, curr_stream);
-  chunk_tensor_wrapper<IdType> h_indices_wrapper(indices, aux_stream);
-
-  chunk_tensor_wrapper<IdType> *d_indptr_wrapper_ptr;
-  chunk_tensor_wrapper<IdType> *d_indices_wrapper_ptr;
-  CUDA_CALL(cudaMallocAsync(&d_indptr_wrapper_ptr,
-                            sizeof(chunk_tensor_wrapper<IdType>), curr_stream));
-  CUDA_CALL(cudaMallocAsync(&d_indices_wrapper_ptr,
-                            sizeof(chunk_tensor_wrapper<IdType>), aux_stream));
-
-  CUDA_CALL(cudaMemcpyAsync(d_indptr_wrapper_ptr, &h_indptr_wrapper,
-                            sizeof(h_indptr_wrapper), cudaMemcpyHostToDevice,
-                            curr_stream));
-  CUDA_CALL(cudaMemcpyAsync(d_indices_wrapper_ptr, &h_indices_wrapper,
-                            sizeof(h_indices_wrapper), cudaMemcpyHostToDevice,
-                            aux_stream));
+  chunk_tensor_wrapper<IdType> *d_indptr_wrapper_ptr =
+      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(indptr->wrapper_ptr_);
+  chunk_tensor_wrapper<IdType> *d_indices_wrapper_ptr =
+      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(indices->wrapper_ptr_);
 
   int num_items = seeds.numel();
   torch::Tensor row_begin_tensor = torch::empty(
@@ -179,7 +127,7 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
       torch::TensorOptions().dtype(indptr->type_).device(torch::kCUDA));
   using it = thrust::counting_iterator<IdType>;
   thrust::for_each(
-      thrust::device.on(curr_stream), it(0), it(num_items),
+      thrust::device, it(0), it(num_items),
       [in = seeds.data_ptr<IdType>(), in_indptr = d_indptr_wrapper_ptr,
        out = sub_indptr.data_ptr<IdType>(), replace, num_picks,
        row_begin = row_begin_tensor.data_ptr<IdType>(),
@@ -205,7 +153,6 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
 
   const uint64_t random_seed = 7777;
   constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
-  CUDA_CALL(cudaStreamSynchronize(aux_stream));
   if (replace) {
     const dim3 block(BLOCK_SIZE);
     const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
@@ -224,8 +171,6 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
         coo_row.data_ptr<IdType>(), coo_col.data_ptr<IdType>());
   }
 
-  CUDA_CALL(cudaFreeAsync(d_indptr_wrapper_ptr, curr_stream));
-  CUDA_CALL(cudaFreeAsync(d_indices_wrapper_ptr, curr_stream));
   return std::make_tuple(coo_row, coo_col);
 }
 

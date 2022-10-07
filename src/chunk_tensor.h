@@ -9,6 +9,39 @@
 
 namespace dgs {
 
+template <typename IdType>
+struct chunk_tensor_wrapper {
+  int64_t threshold_;
+  int64_t num_partitions_;
+  int64_t each_partion_size_;
+  void *on_host_data_ptr_;
+  void **on_device_data_ptrs_;
+
+  __host__ chunk_tensor_wrapper(int64_t threshold, int64_t num_partitions,
+                                int64_t each_partion_size,
+                                void *on_host_data_ptr,
+                                void **uva_device_ptrs_data) {
+    threshold_ = threshold;
+    num_partitions_ = num_partitions;
+    each_partion_size_ = each_partion_size;
+    on_host_data_ptr_ = on_host_data_ptr;
+    on_device_data_ptrs_ = uva_device_ptrs_data;
+  }
+
+  ~chunk_tensor_wrapper(){};
+
+  __device__ inline IdType At(int64_t index) {
+    if (index >= threshold_) {
+      return reinterpret_cast<IdType *>(on_host_data_ptr_)[index];
+    } else {
+      int partition_idx = index / each_partion_size_;
+      return reinterpret_cast<IdType *>(
+          on_device_data_ptrs_[partition_idx])[index - each_partion_size_ *
+                                                           partition_idx];
+    }
+  }
+};
+
 class ChunkTensor : public torch::CustomClassHolder {
  public:
   ChunkTensor(torch::Tensor data, int64_t capacity_per_gpu) {
@@ -72,10 +105,17 @@ class ChunkTensor : public torch::CustomClassHolder {
         uva_device_ptrs_[local_rank] = uva_device_ptr;
       }
     }
-    uva_device_ptrs_data_ = thrust::raw_pointer_cast(uva_device_ptrs_.data());
+
+    CUDA_CALL(
+        cudaMalloc(&uva_device_ptrs_data_, sizeof(void *) * num_partitions_));
+    CUDA_CALL(cudaMemcpy(uva_device_ptrs_data_,
+                         thrust::raw_pointer_cast(uva_device_ptrs_.data()),
+                         sizeof(void *) * num_partitions_,
+                         cudaMemcpyHostToDevice));
+    _CreateWrapperPtr();
   };
 
-  ~ChunkTensor() { Free(); }
+  ~ChunkTensor() { _Free(); }
 
   torch::Tensor GetHostTensor() {
     if (uva_host_ptr_ != nullptr) {
@@ -94,7 +134,22 @@ class ChunkTensor : public torch::CustomClassHolder {
         torch::TensorOptions().dtype(type_).device(torch::kCUDA));
   }
 
-  void Free() {
+  void _CreateWrapperPtr() {
+    DGS_ID_TYPE_SWITCH(type_, IdType, {
+      chunk_tensor_wrapper<IdType> wrapper(
+          threshold_, num_partitions_, partion_device_tensor_size_,
+          uva_host_ptr_, uva_device_ptrs_data_);
+      CUDA_CALL(
+          cudaMalloc(&wrapper_ptr_, sizeof(chunk_tensor_wrapper<IdType>)));
+      CUDA_CALL(cudaMemcpy(wrapper_ptr_, &wrapper, sizeof(wrapper),
+                           cudaMemcpyHostToDevice));
+    });
+  }
+
+  void _Free() {
+    CUDA_CALL(cudaFree(uva_device_ptrs_data_));
+    CUDA_CALL(cudaFree(wrapper_ptr_));
+
     int local_rank = mpi::local_rank;
     if (uva_host_ptr_ != nullptr) {
       CUDA_CALL(cudaFreeHost(uva_host_ptr_));
@@ -121,6 +176,8 @@ class ChunkTensor : public torch::CustomClassHolder {
   void *uva_host_ptr_ = nullptr;
   void **uva_device_ptrs_data_ = nullptr;
   thrust::host_vector<void *> uva_device_ptrs_;
+
+  void *wrapper_ptr_ = nullptr;
 };
 }  // namespace dgs
 
