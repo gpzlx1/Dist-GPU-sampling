@@ -211,10 +211,9 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
     const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
     _CSRRowWiseSampleUniformReplaceKernel<IdType, TILE_SIZE><<<grid, block>>>(
         random_seed, num_picks, num_items, seeds.data_ptr<IdType>(),
-        d_indices_wrapper_ptr, sub_indptr.data_ptr<IdType>(), ,
-        row_begin_tensor.data_ptr<IdType>(),
-        row_end_tensor.data_ptr<IdType>() coo_row.data_ptr<IdType>(),
-        coo_col.data_ptr<IdType>());
+        d_indices_wrapper_ptr, sub_indptr.data_ptr<IdType>(),
+        row_begin_tensor.data_ptr<IdType>(), row_end_tensor.data_ptr<IdType>(),
+        coo_row.data_ptr<IdType>(), coo_col.data_ptr<IdType>());
   } else {
     const dim3 block(BLOCK_SIZE);
     const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
