@@ -50,9 +50,9 @@ struct chunk_tensor_wrapper {
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_ptr,
-    chunk_tensor_wrapper<IdType> *in_index, const IdType *const out_ptr,
-    IdType *const out_rows, IdType *const out_cols) {
+    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
+    const IdType *const out_ptr, IdType *const out_rows, IdType *const out_cols,
+    IdType *const row_begin, IdType *row_end) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -65,8 +65,8 @@ __global__ void _CSRRowWiseSampleUniformKernel(
 
   while (out_row < last_row) {
     const int64_t row = in_rows[out_row];
-    const int64_t in_row_start = in_ptr->At(row);
-    const int64_t deg = in_ptr->At(row + 1) - in_row_start;
+    const int64_t in_row_start = row_begin[out_row];
+    const int64_t deg = row_end[out_row] - in_row_start;
     const int64_t out_row_start = out_ptr[out_row];
 
     if (deg <= num_picks) {
@@ -107,9 +107,9 @@ __global__ void _CSRRowWiseSampleUniformKernel(
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformReplaceKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_ptr,
-    chunk_tensor_wrapper<IdType> *in_index, const IdType *const out_ptr,
-    IdType *const out_rows, IdType *const out_cols) {
+    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
+    const IdType *const out_ptr, IdType *const out_rows, IdType *const out_cols,
+    IdType *const row_begin, IdType *row_end) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -122,9 +122,9 @@ __global__ void _CSRRowWiseSampleUniformReplaceKernel(
 
   while (out_row < last_row) {
     const int64_t row = in_rows[out_row];
-    const int64_t in_row_start = in_ptr->At(row);
+    const int64_t in_row_start = row_begin[out_row];
     const int64_t out_row_start = out_ptr[out_row];
-    const int64_t deg = in_ptr->At(row + 1) - in_row_start;
+    const int64_t deg = row_end[out_row] - in_row_start;
 
     if (deg > 0) {
       // each thread then blindly copies in rows only if deg > 0.
@@ -166,6 +166,12 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
                             aux_stream));
 
   int num_items = seeds.numel();
+  torch::Tensor row_begin_tensor = torch::empty(
+      num_items,
+      torch::TensorOptions().dtype(indptr->type_).device(torch::kCUDA));
+  torch::Tensor row_end_tensor = torch::empty(
+      num_items,
+      torch::TensorOptions().dtype(indptr->type_).device(torch::kCUDA));
   torch::Tensor sub_indptr = torch::empty(
       (num_items + 1),
       torch::TensorOptions().dtype(indptr->type_).device(torch::kCUDA));
@@ -173,15 +179,16 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
   thrust::for_each(
       thrust::device.on(curr_stream), it(0), it(num_items),
       [in = seeds.data_ptr<IdType>(), in_indptr = d_indptr_wrapper_ptr,
-       out = sub_indptr.data_ptr<IdType>(), replace,
-       num_picks] __device__(int i) mutable {
+       out = sub_indptr.data_ptr<IdType>(), replace, num_picks,
+       row_begin = row_begin_tensor.data_ptr<IdType>(),
+       row_end = row_end_tensor.data_ptr<IdType>()] __device__(int i) mutable {
         IdType row = in[i];
-        IdType begin = in_indptr->At(row);
-        IdType end = in_indptr->At(row + 1);
+        row_begin[i] = in_indptr->At(row);
+        row_end[i] = in_indptr->At(row + 1);
         if (replace) {
-          out[i] = (end - begin) == 0 ? 0 : num_picks;
+          out[i] = (row_end[i] - row_begin[i]) == 0 ? 0 : num_picks;
         } else {
-          out[i] = MIN(end - begin, num_picks);
+          out[i] = MIN(row_end[i] - row_begin[i], num_picks);
         }
       });
 
@@ -202,17 +209,17 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
     const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
     _CSRRowWiseSampleUniformReplaceKernel<IdType, TILE_SIZE><<<grid, block>>>(
         random_seed, num_picks, num_items, seeds.data_ptr<IdType>(),
-        d_indptr_wrapper_ptr, d_indices_wrapper_ptr,
-        sub_indptr.data_ptr<IdType>(), coo_row.data_ptr<IdType>(),
-        coo_col.data_ptr<IdType>());
+        d_indices_wrapper_ptr, sub_indptr.data_ptr<IdType>(),
+        coo_row.data_ptr<IdType>(), coo_col.data_ptr<IdType>(),
+        row_begin_tensor.data_ptr<IdType>(), row_end_tensor.data_ptr<IdType>());
   } else {
     const dim3 block(BLOCK_SIZE);
     const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
     _CSRRowWiseSampleUniformKernel<IdType, TILE_SIZE><<<grid, block>>>(
         random_seed, num_picks, num_items, seeds.data_ptr<IdType>(),
-        d_indptr_wrapper_ptr, d_indices_wrapper_ptr,
-        sub_indptr.data_ptr<IdType>(), coo_row.data_ptr<IdType>(),
-        coo_col.data_ptr<IdType>());
+        d_indices_wrapper_ptr, sub_indptr.data_ptr<IdType>(),
+        coo_row.data_ptr<IdType>(), coo_col.data_ptr<IdType>(),
+        row_begin_tensor.data_ptr<IdType>(), row_end_tensor.data_ptr<IdType>());
   }
 
   CUDA_CALL(cudaFreeAsync(d_indptr_wrapper_ptr, curr_stream));
