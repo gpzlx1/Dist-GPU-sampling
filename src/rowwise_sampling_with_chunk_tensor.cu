@@ -51,8 +51,9 @@ template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
     const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
-    const IdType *const out_ptr, IdType *const out_rows, IdType *const out_cols,
-    IdType *const row_begin, IdType *row_end) {
+    const IdType *const out_ptr, const IdType *const row_begin,
+    const IdType *const row_end, IdType *const out_rows,
+    IdType *const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -108,8 +109,9 @@ template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformReplaceKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
     const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
-    const IdType *const out_ptr, IdType *const out_rows, IdType *const out_cols,
-    IdType *const row_begin, IdType *row_end) {
+    const IdType *const out_ptr, const IdType *const row_begin,
+    const IdType *const row_end, IdType *const out_rows,
+    IdType *const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -209,17 +211,18 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
     const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
     _CSRRowWiseSampleUniformReplaceKernel<IdType, TILE_SIZE><<<grid, block>>>(
         random_seed, num_picks, num_items, seeds.data_ptr<IdType>(),
-        d_indices_wrapper_ptr, sub_indptr.data_ptr<IdType>(),
-        coo_row.data_ptr<IdType>(), coo_col.data_ptr<IdType>(),
-        row_begin_tensor.data_ptr<IdType>(), row_end_tensor.data_ptr<IdType>());
+        d_indices_wrapper_ptr, sub_indptr.data_ptr<IdType>(), ,
+        row_begin_tensor.data_ptr<IdType>(),
+        row_end_tensor.data_ptr<IdType>() coo_row.data_ptr<IdType>(),
+        coo_col.data_ptr<IdType>());
   } else {
     const dim3 block(BLOCK_SIZE);
     const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
     _CSRRowWiseSampleUniformKernel<IdType, TILE_SIZE><<<grid, block>>>(
         random_seed, num_picks, num_items, seeds.data_ptr<IdType>(),
         d_indices_wrapper_ptr, sub_indptr.data_ptr<IdType>(),
-        coo_row.data_ptr<IdType>(), coo_col.data_ptr<IdType>(),
-        row_begin_tensor.data_ptr<IdType>(), row_end_tensor.data_ptr<IdType>());
+        row_begin_tensor.data_ptr<IdType>(), row_end_tensor.data_ptr<IdType>(),
+        coo_row.data_ptr<IdType>(), coo_col.data_ptr<IdType>());
   }
 
   CUDA_CALL(cudaFreeAsync(d_indptr_wrapper_ptr, curr_stream));
