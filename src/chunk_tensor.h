@@ -86,23 +86,25 @@ class ChunkTensor : public torch::CustomClassHolder {
         MIN(each_partion_size_t, total_tensor_size_ * type_size_t_ -
                                      local_rank * each_partion_size_t),
         cudaMemcpyHostToDevice));
+    uva_device_ptrs_[local_rank] = uva_device_ptr;
 
     // Context IPC for uva_device_ptrs_
-    cudaIpcMemHandle_t ipc_device_mem_handle;
-    cudaIpcMemHandle_t ipc_device_mem_handle_recvbuff[num_partitions_];
-    CUDA_CALL(cudaIpcGetMemHandle(&ipc_device_mem_handle, uva_device_ptr));
-    MPI_Allgather(&ipc_device_mem_handle, sizeof(cudaIpcMemHandle_t), MPI_BYTE,
-                  ipc_device_mem_handle_recvbuff, sizeof(cudaIpcMemHandle_t),
-                  MPI_BYTE, mpi::global_comm);
+    if (num_partitions_ > 1) {
+      cudaIpcMemHandle_t ipc_device_mem_handle;
+      cudaIpcMemHandle_t ipc_device_mem_handle_recvbuff[num_partitions_];
 
-    // after communication, setup uva_device_ptrs_;
-    for (int i = 0; i < int(uva_device_ptrs_.size()); i++) {
-      if (i != local_rank) {
-        CUDA_CALL(cudaIpcOpenMemHandle(&uva_device_ptrs_[i],
-                                       ipc_device_mem_handle_recvbuff[i],
-                                       cudaIpcMemLazyEnablePeerAccess));
-      } else {
-        uva_device_ptrs_[local_rank] = uva_device_ptr;
+      CUDA_CALL(cudaIpcGetMemHandle(&ipc_device_mem_handle, uva_device_ptr));
+      MPI_Allgather(&ipc_device_mem_handle, sizeof(cudaIpcMemHandle_t),
+                    MPI_BYTE, ipc_device_mem_handle_recvbuff,
+                    sizeof(cudaIpcMemHandle_t), MPI_BYTE, mpi::global_comm);
+
+      // after communication, setup uva_device_ptrs_;
+      for (int i = 0; i < int(uva_device_ptrs_.size()); i++) {
+        if (i != local_rank) {
+          CUDA_CALL(cudaIpcOpenMemHandle(&uva_device_ptrs_[i],
+                                         ipc_device_mem_handle_recvbuff[i],
+                                         cudaIpcMemLazyEnablePeerAccess));
+        }
       }
     }
 
