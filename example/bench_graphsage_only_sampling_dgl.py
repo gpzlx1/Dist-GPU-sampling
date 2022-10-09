@@ -7,7 +7,6 @@ import torch.distributed as dist
 import numpy as np
 from dataloader import SeedGenerator
 from dgl.transforms.functional import to_block
-from mpi4py import MPI
 import dgl
 import os
 
@@ -59,22 +58,10 @@ def load_ogbn_papers100m(root="dataset"):
 
 
 def evaluation(type, dataset, batch_size, mode):
-    torch.manual_seed(1)
-    torch.set_num_threads(1)
-    comm = MPI.COMM_WORLD
-    torch.cuda.set_device(comm.Get_rank())
-    os.environ["RANK"] = str(comm.Get_rank())
-    os.environ["WORLD_SIZE"] = str(comm.Get_size())
+    local_rank = dist.get_rank()
+    comm_size = dist.get_world_size()
 
-    local_rank = comm.Get_rank()
-    comm_size = comm.Get_size()
-
-    if "MASTER_ADDR" not in os.environ:
-        os.environ["MASTER_ADDR"] = "localhost"
-    if "MASTER_PORT" not in os.environ:
-        os.environ["MASTER_PORT"] = "12335"
-
-    dist.init_process_group(backend='nccl', init_method="env://")
+    torch.cuda.set_device(local_rank)
 
     g = None
     if (dataset == "reddit"):
@@ -153,10 +140,12 @@ if __name__ == '__main__':
                         default="5000",
                         type=int,
                         help="The number of seeds of sampling.")
-    parser.add_argument("--mode",
-                        default="cuda",
-                        type=str,
-                        choices=["cuda", "cpu", "uva"])
     args = parser.parse_args()
 
-    evaluation(args.type, args.dataset, args.batch_size, args.mode)
+    torch.manual_seed(1)
+    torch.set_num_threads(1)
+    dist.init_process_group(backend='nccl', init_method="env://")
+
+    evaluation(args.type, args.dataset, args.batch_size, 'cpu')
+    evaluation(args.type, args.dataset, args.batch_size, 'uva')
+    evaluation(args.type, args.dataset, args.batch_size, 'cuda')
