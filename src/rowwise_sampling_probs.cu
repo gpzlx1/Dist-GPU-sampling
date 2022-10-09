@@ -261,6 +261,10 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingProbCUDA(
 std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingProb(
     torch::Tensor seeds, torch::Tensor indptr, torch::Tensor indices,
     torch::Tensor probs, int64_t num_picks, bool replace) {
+  CHECK_CUDA(seeds);
+  CHECK_CUDA(indptr);
+  CHECK_CUDA(indices);
+  CHECK_CUDA(probs);
   DGS_ID_TYPE_SWITCH(indptr.dtype(), IdType, {
     DGS_VALUE_TYPE_SWITCH(probs.dtype(), FloatType, {
       return RowWiseSamplingProbCUDA<IdType, FloatType>(

@@ -44,6 +44,6 @@ for fan_out in [5]:
     #block = dgl.create_block((coo_row, coo_col),
     #                         num_src_nodes=frontier.numel(),
     #                         num_dst_nodes=seeds.numel())
-    frontier = seeds
+    seeds = frontier
 
 torch.ops.dgs_ops._CAPI_finalize()
