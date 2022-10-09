@@ -8,6 +8,7 @@ import numpy as np
 from dataloader import SeedGenerator
 from dgl.transforms.functional import to_block
 from mpi4py import MPI
+import dgl
 import os
 
 
@@ -52,6 +53,11 @@ def load_ogb(name, root="dataset"):
     return graph, num_labels
 
 
+def load_ogbn_papers100m(root="dataset"):
+    g = dgl.load_graphs(root + "/fast-papers100M")
+    return g[0][0], None
+
+
 def evaluation(type, dataset, batch_size, mode):
     torch.manual_seed(1)
     torch.set_num_threads(1)
@@ -76,9 +82,9 @@ def evaluation(type, dataset, batch_size, mode):
     elif (dataset == "ogbn-products"):
         g, _ = load_ogb(name="ogbn-products")
     elif (dataset == "ogbn-papers100M"):
-        g, _ = load_ogb(name="ogbn-papers100M")
+        g, _ = load_ogbn_papers100m(root="/mnt/c/data")
 
-    train_nid = g.nodes()[g.ndata["train_mask"]]
+    train_nid = g.nodes()[g.ndata["train_mask"].bool()]
     train_nid_num = train_nid.numel()
     each_gpu_seeds_num = int(train_nid_num / comm_size)
     if type == "int":

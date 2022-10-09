@@ -6,6 +6,7 @@ import torch.distributed as dist
 from dgl.data import RedditDataset
 from ogb.nodeproppred import DglNodePropPredDataset
 import numpy as np
+import dgl
 from dataloader import SeedGenerator
 
 
@@ -50,6 +51,11 @@ def load_ogb(name, root="dataset"):
     return graph, num_labels
 
 
+def load_ogbn_papers100m(root="dataset"):
+    g = dgl.load_graphs(root + "/fast-papers100M")
+    return g[0][0], None
+
+
 def evaluation(type, dataset, batch_size):
     torch.manual_seed(1)
     torch.ops.load_library("./build/libdgs.so")
@@ -74,9 +80,9 @@ def evaluation(type, dataset, batch_size):
     elif (dataset == "ogbn-products"):
         g, _ = load_ogb(name="ogbn-products")
     elif (dataset == "ogbn-papers100M"):
-        g, _ = load_ogb(name="ogbn-papers100M")
+        g, _ = load_ogbn_papers100m(root="/mnt/c/data")
 
-    train_nid = g.nodes()[g.ndata["train_mask"]]
+    train_nid = g.nodes()[g.ndata["train_mask"].bool()]
     train_nid_num = train_nid.numel()
     each_gpu_seeds_num = int(train_nid_num / comm_size)
     if type == "int":
