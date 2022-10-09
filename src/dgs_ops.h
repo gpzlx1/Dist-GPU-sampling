@@ -16,6 +16,9 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniform(
 std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniformWithChunkTensor(
     torch::Tensor seeds, c10::intrusive_ptr<ChunkTensor> indptr,
     c10::intrusive_ptr<ChunkTensor> indices, int64_t num_picks, bool replace);
+std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingProb(
+    torch::Tensor seeds, torch::Tensor indptr, torch::Tensor indices,
+    torch::Tensor probs, int64_t num_picks, bool replace);
 }  // namespace dgs
 
 #endif

@@ -40,6 +40,22 @@
     }                                                \
   } while (0);
 
+#define DGS_VALUE_TYPE_SWITCH(val, VType, ...)                     \
+  do {                                                             \
+    if ((val) == torch::kInt32) {                                  \
+      typedef int32_t VType;                                       \
+      { __VA_ARGS__ }                                              \
+    } else if ((val) == torch::kInt64) {                           \
+      typedef int64_t VType;                                       \
+      { __VA_ARGS__ }                                              \
+    } else if ((val) == torch::kFloat32) {                         \
+      typedef float VType;                                         \
+      { __VA_ARGS__ }                                              \
+    } else {                                                       \
+      LOG(FATAL) << "Value can only be int32 or int64 or float32"; \
+    }                                                              \
+  } while (0);
+
 #define MIN(x, y) ((x < y) ? x : y)
 
 #endif
