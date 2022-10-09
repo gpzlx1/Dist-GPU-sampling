@@ -3,9 +3,12 @@ import time
 import torch
 from dgl.data import RedditDataset
 from ogb.nodeproppred import DglNodePropPredDataset
+import torch.distributed as dist
 import numpy as np
 from dataloader import SeedGenerator
 from dgl.transforms.functional import to_block
+from mpi4py import MPI
+import os
 
 
 def load_reddit(self_loop=True):
@@ -51,6 +54,21 @@ def load_ogb(name, root="dataset"):
 
 def evaluation(type, dataset, batch_size, mode):
     torch.manual_seed(1)
+    torch.set_num_threads(1)
+    comm = MPI.COMM_WORLD
+    torch.cuda.set_device(comm.Get_rank())
+    os.environ["RANK"] = str(comm.Get_rank())
+    os.environ["WORLD_SIZE"] = str(comm.Get_size())
+
+    local_rank = comm.Get_rank()
+    comm_size = comm.Get_size()
+
+    if "MASTER_ADDR" not in os.environ:
+        os.environ["MASTER_ADDR"] = "localhost"
+    if "MASTER_PORT" not in os.environ:
+        os.environ["MASTER_PORT"] = "12335"
+
+    dist.init_process_group(backend='nccl', init_method="env://")
 
     g = None
     if (dataset == "reddit"):
@@ -61,12 +79,20 @@ def evaluation(type, dataset, batch_size, mode):
         g, _ = load_ogb(name="ogbn-papers100M")
 
     train_nid = g.nodes()[g.ndata["train_mask"]]
+    train_nid_num = train_nid.numel()
+    each_gpu_seeds_num = int(train_nid_num / comm_size)
     if type == "int":
-        train_nid = train_nid.int()
         g = g.formats(['csc']).int()
+        train_nid = train_nid.int()
+        train_nid = train_nid[local_rank *
+                              each_gpu_seeds_num:(local_rank + 1) *
+                              each_gpu_seeds_num]
     else:
-        train_nid = train_nid.long()
         g = g.formats(['csc']).long()
+        train_nid = train_nid.long()
+        train_nid = train_nid[local_rank *
+                              each_gpu_seeds_num:(local_rank + 1) *
+                              each_gpu_seeds_num]
 
     g.ndata.clear()
     g.edata.clear()
@@ -98,6 +124,8 @@ def bench(g, train_nid, batch_size, device):
                 frontier = g.sample_neighbors(seeds, fan_out, replace=False)
                 block = to_block(frontier, seeds)
                 seeds = block.srcdata['_ID']
+
+            dist.barrier()
 
         torch.cuda.synchronize()
         end = time.time()
