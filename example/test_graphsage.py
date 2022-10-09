@@ -12,7 +12,7 @@ print(indices)
 print(seeds)
 
 for fan_out in [5]:
-    coo_row, coo_col = torch.ops.dgs_ops._CAPI_sample_neighbors_with_probs(
+    coo_row, coo_col = torch.ops.dgs_ops._CAPI_sample_neighbors(
         seeds, indptr, indices, fan_out, False)
     frontier, (coo_row, coo_col) = torch.ops.dgs_ops._CAPI_tensor_relabel(
         [seeds, coo_col], [coo_row, coo_col])
