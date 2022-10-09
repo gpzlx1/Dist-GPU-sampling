@@ -23,5 +23,6 @@ TORCH_LIBRARY(dgs_ops, m) {
       .def("_CAPI_tensor_relabel", &TensorRelabel)
       .def("_CAPI_sample_neighbors", &RowWiseSamplingUniform)
       .def("_CAPI_sample_neighbors_with_chunk_tensor",
-           &RowWiseSamplingUniformWithChunkTensor);
+           &RowWiseSamplingUniformWithChunkTensor)
+      .def("_CAPI_sample_neighbors_with_probs", &RowWiseSamplingProb);
 }

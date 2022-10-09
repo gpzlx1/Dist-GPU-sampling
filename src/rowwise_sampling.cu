@@ -171,6 +171,9 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniformCUDA(
 std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniform(
     torch::Tensor seeds, torch::Tensor indptr, torch::Tensor indices,
     int64_t num_picks, bool replace) {
+  CHECK_CUDA(seeds);
+  CHECK_CUDA(indptr);
+  CHECK_CUDA(indices);
   DGS_ID_TYPE_SWITCH(indptr.dtype(), IdType, {
     return RowWiseSamplingUniformCUDA<IdType>(seeds, indptr, indices, num_picks,
                                               replace);
