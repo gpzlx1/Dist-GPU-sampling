@@ -109,10 +109,12 @@ def evaluation(type, dataset, batch_size):
             avg_sample_time = bench(indptr, indices, train_nid, batch_size,
                                     type_size_in_bytes, indptr_cache,
                                     indices_cache)
-            print(
-                "Device {} | Dataset {} | Type {} | indptr cache size {:.1f} | indices cache size {:.1f} | sampling time {:.3f} ms"
-                .format(torch.ops.dgs_ops._CAPI_get_rank(), dataset, type,
-                        indptr_cache, indices_cache, avg_sample_time))
+            if local_rank == 0:
+                print(
+                    "World Size {} | Device {} | Dataset {} | Type {} | indptr cache size {:.1f} | indices cache size {:.1f} | sampling time {:.3f} ms"
+                    .format(comm_size, torch.ops.dgs_ops._CAPI_get_rank(),
+                            dataset, type, indptr_cache, indices_cache,
+                            avg_sample_time))
 
     torch.ops.dgs_ops._CAPI_finalize()
 

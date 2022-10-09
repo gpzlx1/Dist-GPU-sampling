@@ -100,8 +100,10 @@ def evaluation(type, dataset, batch_size, mode):
         g.pin_memory_()
 
     avg_sample_time = bench(g, train_nid, batch_size, device)
-    print("Mode {} | Dataset {} | Type {} | sampling time {:.3f} ms".format(
-        mode, dataset, type, avg_sample_time))
+    if local_rank == 0:
+        print(
+            "World Size {} | Mode {} | Dataset {} | Type {} | sampling time {:.3f} ms"
+            .format(comm_size, mode, dataset, type, avg_sample_time))
 
 
 def bench(g, train_nid, batch_size, device):
