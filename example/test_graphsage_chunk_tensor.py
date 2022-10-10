@@ -46,4 +46,7 @@ for fan_out in [5]:
     #                         num_dst_nodes=seeds.numel())
     seeds = frontier
 
+del chunk_indptr
+del chunk_indices
+
 torch.ops.dgs_ops._CAPI_finalize()
