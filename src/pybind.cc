@@ -24,5 +24,7 @@ TORCH_LIBRARY(dgs_ops, m) {
       .def("_CAPI_sample_neighbors", &RowWiseSamplingUniform)
       .def("_CAPI_sample_neighbors_with_chunk_tensor",
            &RowWiseSamplingUniformWithChunkTensor)
-      .def("_CAPI_sample_neighbors_with_probs", &RowWiseSamplingProb);
+      .def("_CAPI_sample_neighbors_with_probs", &RowWiseSamplingProb)
+      .def("_CAPI_sample_neighbors_with_probs_with_chunk_tensor",
+           &RowWiseSamplingProbWithChunkTensor);
 }

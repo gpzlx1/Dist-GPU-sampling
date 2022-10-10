@@ -9,7 +9,7 @@
 
 namespace dgs {
 
-template <typename IdType>
+template <typename ValueType>
 struct chunk_tensor_wrapper {
   int64_t threshold_;
   int64_t num_partitions_;
@@ -30,12 +30,12 @@ struct chunk_tensor_wrapper {
 
   ~chunk_tensor_wrapper(){};
 
-  __device__ inline IdType At(int64_t index) {
+  __device__ inline ValueType At(int64_t index) {
     if (index >= threshold_) {
-      return reinterpret_cast<IdType *>(on_host_data_ptr_)[index];
+      return reinterpret_cast<ValueType *>(on_host_data_ptr_)[index];
     } else {
       int partition_idx = index / each_partion_size_;
-      return reinterpret_cast<IdType *>(
+      return reinterpret_cast<ValueType *>(
           on_device_data_ptrs_[partition_idx])[index - each_partion_size_ *
                                                            partition_idx];
     }
@@ -137,12 +137,12 @@ class ChunkTensor : public torch::CustomClassHolder {
   }
 
   void _CreateWrapperPtr() {
-    DGS_ID_TYPE_SWITCH(type_, IdType, {
-      chunk_tensor_wrapper<IdType> wrapper(
+    DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
+      chunk_tensor_wrapper<ValueType> wrapper(
           threshold_, num_partitions_, partion_device_tensor_size_,
           uva_host_ptr_, uva_device_ptrs_data_);
       CUDA_CALL(
-          cudaMalloc(&wrapper_ptr_, sizeof(chunk_tensor_wrapper<IdType>)));
+          cudaMalloc(&wrapper_ptr_, sizeof(chunk_tensor_wrapper<ValueType>)));
       CUDA_CALL(cudaMemcpy(wrapper_ptr_, &wrapper, sizeof(wrapper),
                            cudaMemcpyHostToDevice));
     });
