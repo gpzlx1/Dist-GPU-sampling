@@ -84,8 +84,6 @@ def evaluate(model, graph, dataloader):
 #         return MF.accuracy(pred, label)
 
 def train(args, dataset):
-    # create sampler & dataloader
-    # torch.cuda.set_device(rank)
     torch.manual_seed(1)
     torch.set_num_threads(1)
     torch.ops.load_library("./build/libdgs.so")
@@ -99,20 +97,13 @@ def train(args, dataset):
     dist.init_process_group(backend='nccl', init_method="env://")
 
 
-    # torch.cuda.set_device(torch.ops.dgs_ops._CAPI_get_rank())
-    # os.environ["RANK"] = str(torch.ops.dgs_ops._CAPI_get_rank())
-    # os.environ["WORLD_SIZE"] = str(torch.ops.dgs_ops._CAPI_get_size())
     torch.set_num_threads(1)         
     rank = dist.get_rank()
     world_size = dist.get_world_size()
     print('rank:', rank)
-    torch.cuda.set_device(rank)
-
-   
-    # dist.init_process_group('nccl', 'env://', world_size=world_size, rank=rank)
- 
-    # g = g.to('cuda' if args.mode == 'puregpu' else 'cpu')
+    torch.cuda.set_device(rank)   
     device = torch.device(rank)
+
     g = dataset[0]
     # create GraphSAGE model
     in_size = g.ndata['feat'].shape[1]
@@ -148,7 +139,6 @@ def train(args, dataset):
         total_loss = 0
         
         for it, (input_nodes, output_nodes, blocks) in enumerate(train_dataloader):
-            # print(blocks, input_nodes.shape, output_nodes.shape)
             x = cacher.fetch_data(input_nodes)
             y = label[output_nodes]
             if it==0:
@@ -186,6 +176,7 @@ if __name__ == '__main__':
     parser.add_argument("--cpindices", default=0, type=float, help="cache percentage of indices")                             
     parser.add_argument("--cpindptr", default=0, type=float, help="cache percentage of indptr")     
     parser.add_argument("--cpfeat", default=0, type=float, help="cache percentage of features")                              
+
     args = parser.parse_args()
     # if not torch.cuda.is_available():
     #     args.mode = 'cpu'
@@ -204,14 +195,5 @@ if __name__ == '__main__':
         exit()
     # g = dataset[0]
 
-
-    n_procs = 2
-    # n_procs = torch.cuda.device_count()
-
-
-    # print("Spawning processes")
-    # import torch.multiprocessing as mp
-    # # mp.start_processes(train, args=(n_procs, args, dataset), nprocs=n_procs, daemon=False, start_method="fork")
-    # mp.spawn(train, args=(n_procs, args, dataset), nprocs=n_procs, daemon=True)
     train(args, dataset)
 
