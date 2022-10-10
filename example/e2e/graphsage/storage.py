@@ -59,9 +59,6 @@ class GraphCacheServer:
         self.capability = max(0, int(0.8*available / (self.total_dim * csize)))
         if cache_rate != 1.0:
             self.capability = min(self.capability, int(self.node_num*cache_rate))
-        # self.capability = 0
-        # self.capability = int(6 * 1024 * 1024 * 1024 / (self.total_dim * 4))
-        #self.capability = int(self.node_num * 0.8)
         print('Cache Memory: {:.2f}G. Capability: {}'
               .format(available / 1024 / 1024 / 1024, self.capability))
         # Step3: cache
@@ -162,7 +159,6 @@ class GraphCacheServer:
             return 0.0
         if self.try_num == 0:
             return 0.0
-        # print(self.miss_num, self.try_num)
         miss_rate = float(self.miss_num) / self.try_num
         self.miss_num = 0
         self.try_num = 0

@@ -23,7 +23,6 @@ class gpu_sampler(BlockSampler):
         indices = g.adj_sparse("csc")[1].long()
         self.chunk_indptr = torch.classes.dgs_classes.ChunkTensor(indptr, int(cache_percent_indptr*len(indptr))*8)
         self.chunk_indices = torch.classes.dgs_classes.ChunkTensor(indices, int(cache_percent_indices*len(indices))*8)
-        # self.chunk_indices = torch.classes.dgs_classes.ChunkTensor(indices, int(indptr[int(cache_percent_indptr*len(indptr))-1])*8)
 
 
     def sample_blocks(self, g, seed_nodes, exclude_eids=None):
