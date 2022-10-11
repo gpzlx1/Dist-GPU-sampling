@@ -5,11 +5,10 @@ import torchmetrics.functional as MF
 import dgl
 import dgl.nn as dglnn
 from dgl.data import AsNodePredDataset
-from dgl.dataloading import DataLoader, MultiLayerFullNeighborSampler
+from dgl.dataloading import DataLoader, NeighborSampler, MultiLayerFullNeighborSampler
 from ogb.nodeproppred import DglNodePropPredDataset
 import tqdm
 import argparse
-from sampler import gpu_sampler
 import time
 import numpy as np
 import torch.distributed as dist
@@ -86,7 +85,7 @@ def evaluate(model, graph, dataloader):
     return MF.accuracy(torch.cat(y_hats), torch.cat(ys))
 
 
-def train(args, dataset):
+def evaluation(args, dataset):
     rank = dist.get_rank()
     world_size = dist.get_world_size()
 
@@ -102,30 +101,39 @@ def train(args, dataset):
     label = g.ndata.pop("label").cuda()
     cacher = storage.GraphCacheServer(feat, g.num_nodes(), None, rank)
 
-    model = SAGE(in_size, 256, out_size).to(device)
-    model = nn.parallel.DistributedDataParallel(model,
-                                                device_ids=[rank],
-                                                output_device=rank)
-
     train_idx = dataset.train_idx
     train_idx_num = train_idx.numel()
     each_gpu_seeds_num = int(train_idx_num / world_size)
     train_idx = train_idx[rank * each_gpu_seeds_num:(rank + 1) *
                           each_gpu_seeds_num]
     if args.type == "int":
+        g = g.formats(['csc']).int()
         train_idx = train_idx.int()
     else:
+        g = g.formats(['csc']).long()
         train_idx = train_idx.long()
+    g.ndata.clear()
+    g.edata.clear()
 
-    train_idx = dataset.train_idx.to(device)
-    sampler = gpu_sampler([5, 10, 15],
-                          g,
-                          cache_percent_indptr=args.cpindptr,
-                          cache_percent_indices=args.cpindices,
-                          rank=rank,
-                          world_size=world_size,
-                          type=args.type)
-    use_uva = True
+    if args.mode == 'gpu':
+        g = g.to(device)
+        train_idx = train_idx.to(device)
+        use_uva = False
+    elif args.mode == 'cpu':
+        g = g.to("cpu")
+        train_idx = train_idx.to("cpu")
+        use_uva = False
+    elif args.mode == 'uva':
+        g = g.to("cpu")
+        train_idx = train_idx.to(device)
+        use_uva = True
+
+    model = SAGE(in_size, 256, out_size).to(device)
+    model = nn.parallel.DistributedDataParallel(model,
+                                                device_ids=[rank],
+                                                output_device=rank)
+
+    sampler = NeighborSampler([5, 10, 15])
     train_dataloader = DataLoader(g,
                                   train_idx,
                                   sampler,
@@ -161,26 +169,15 @@ def train(args, dataset):
 
     if rank == 0:
         print(
-            "World Size {} | Dataset {} | Type {} | indptr cache size {:.1f} | indices cache size {:.1f} | Epoch time {:.3f} ms"
-            .format(world_size, args.dataset, args.type, args.cpindptr,
-                    args.cpindices,
+            "World Size {} | Mode {} | Dataset {} | Type {} | Epoch time {:.3f} ms"
+            .format(world_size, args.mode, args.dataset, args.type,
                     np.mean(time_log[1:]) * 1000))
-
-    del sampler
-    torch.ops.dgs_ops._CAPI_finalize()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", default='uva', choices=['cpu', 'uva', 'gpu'])
     parser.add_argument("--dataset", default='reddit')
-    parser.add_argument("--cpindices",
-                        default=0,
-                        type=float,
-                        help="cache percentage of indices")
-    parser.add_argument("--cpindptr",
-                        default=0,
-                        type=float,
-                        help="cache percentage of indptr")
     parser.add_argument("--cpfeat",
                         default=0,
                         type=float,
@@ -193,7 +190,6 @@ if __name__ == '__main__':
                         default="5000",
                         type=int,
                         help="The number of seeds of sampling.")
-
     args = parser.parse_args()
     print('Loading data')
 
@@ -210,14 +206,6 @@ if __name__ == '__main__':
 
     torch.manual_seed(1)
     torch.set_num_threads(1)
-    torch.ops.load_library("./build/libdgs.so")
-    torch.ops.dgs_ops._CAPI_initialize()
-    if "MASTER_ADDR" not in os.environ:
-        os.environ["MASTER_ADDR"] = "localhost"
-    if "MASTER_PORT" not in os.environ:
-        os.environ["MASTER_PORT"] = "12345"
-    os.environ["RANK"] = str(torch.ops.dgs_ops._CAPI_get_rank())
-    os.environ["WORLD_SIZE"] = str(torch.ops.dgs_ops._CAPI_get_size())
     dist.init_process_group(backend='nccl', init_method="env://")
 
-    train(args, dataset)
+    evaluation(args, dataset)
