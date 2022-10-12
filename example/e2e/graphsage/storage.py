@@ -55,21 +55,24 @@ class GraphCacheServer:
             - 1024 * 1024 * 1024 - self.node_num  # in bytes
         # Stpe2: get capability
         csize = self.nfeats[0][0].element_size()
-        self.capability = max(0, int(0.8*available / (self.total_dim * csize)))
+        self.capability = max(0,
+                              int(0.8 * available / (self.total_dim * csize)))
         if cache_rate != 1.0:
-            self.capability = min(self.capability, int(self.node_num*cache_rate))
-        print('Cache Memory: {:.2f}G. Capability: {}'
-              .format(available / 1024 / 1024 / 1024, self.capability))
+            self.capability = min(self.capability,
+                                  int(self.node_num * cache_rate))
+        # print('Cache Memory: {:.2f}G. Capability: {}'.format(
+        #     available / 1024 / 1024 / 1024, self.capability))
         # Step3: cache
         if self.capability >= self.node_num:
             # fully cache
-            print('cache the full graph...')
+            # print('cache the full graph...')
             full_nids = torch.arange(self.node_num).cuda(self.gpuid)
             self.cache_fix_data(full_nids, self.nfeats, is_full=True)
         else:
             # choose top-cap out-degree nodes to cache
-            print('cache the part of graph... caching percentage: {:.4f}'
-                  .format(self.capability / self.node_num))
+            # print(
+            #     'cache the part of graph... caching percentage: {:.4f}'.format(
+            #         self.capability / self.node_num))
 
             if "_P" in dgl_g.ndata and True:
                 sort_nid = torch.argsort(dgl_g.ndata["_P"], descending=True)
@@ -111,7 +114,8 @@ class GraphCacheServer:
         """
         if self.full_cached:
             # return self.fetch_from_cache(nids)
-            return torch.index_select(self.gpu_fix_cache, 0, nids.to(self.gpuid))
+            return torch.index_select(self.gpu_fix_cache, 0,
+                                      nids.to(self.gpuid))
 
         nids_gpu = nids.to(self.gpuid).to()
         with torch.autograd.profiler.record_function('cache-index'):
@@ -122,22 +126,23 @@ class GraphCacheServer:
 
         with torch.autograd.profiler.record_function('cache-allocate'):
             with torch.cuda.device(self.gpuid):
-                data = torch.empty(
-                    (nids_gpu.size(0), self.total_dim), dtype=self.fdtype, device=self.gpuid)
+                data = torch.empty((nids_gpu.size(0), self.total_dim),
+                                   dtype=self.fdtype,
+                                   device=self.gpuid)
 
         # for gpu cached tensors: ##NOTE: Make sure it is in-place update!
         with torch.autograd.profiler.record_function('cache-gpu'):
             if nids_in_gpu.size(0) != 0:
-                cacheid = torch.index_select(
-                    self.localid2cacheid, 0, nids_in_gpu)
-                data[gpu_mask] = torch.index_select(
-                    self.gpu_fix_cache, 0, cacheid)
+                cacheid = torch.index_select(self.localid2cacheid, 0,
+                                             nids_in_gpu)
+                data[gpu_mask] = torch.index_select(self.gpu_fix_cache, 0,
+                                                    cacheid)
 
         # for cpu cached tensors: ##NOTE: Make sure it is in-place update!
         with torch.autograd.profiler.record_function('cache-cpu'):
             if nids_in_cpu.size(0) != 0:
-                data[cpu_mask] = torch.index_select(
-                    self.nfeats, 0, nids_in_cpu).to(self.gpuid)
+                data[cpu_mask] = torch.index_select(self.nfeats, 0,
+                                                    nids_in_cpu).to(self.gpuid)
 
         if self.log:
             self.log_miss_rate(nids_in_cpu.size(0), nids.size(0))
@@ -145,8 +150,8 @@ class GraphCacheServer:
 
     def fetch_from_cache(self, nids):
         with torch.autograd.profiler.record_function('cache-gpu'):
-            data = torch.index_select(
-                self.gpu_fix_cache, 0, nids.to(self.gpuid))
+            data = torch.index_select(self.gpu_fix_cache, 0,
+                                      nids.to(self.gpuid))
         return data
 
     def log_miss_rate(self, miss_num, total_num):
