@@ -101,22 +101,20 @@ def process_dataset(dataset, type):
     return g, label, feat, train_idx, dataset.num_classes
 
 
-def evaluation(g, label, feat, train_idx, num_classes, batch_size,
+def evaluation(g, label, feat, train_idx, batch_size, fan_out, model,
                cache_percent_indptr, cache_percent_indices,
                cache_percent_probs):
     local_rank = torch.ops.dgs_ops._CAPI_get_rank()
     comm_size = torch.ops.dgs_ops._CAPI_get_size()
     train_device = torch.device(local_rank)
-    in_size = feat.shape[1]
 
-    # create GraphSAGE model
-    model = SAGE(in_size, 256, num_classes).to(train_device)
+    model = model.to(train_device)
     model = nn.parallel.DistributedDataParallel(model,
                                                 device_ids=[local_rank],
                                                 output_device=local_rank)
 
     # create sampler and dataloader
-    sampler = ChunkTensorSampler([5, 5, 5],
+    sampler = ChunkTensorSampler(fan_out,
                                  g,
                                  prob="prob",
                                  cache_percent_indices=cache_percent_indices,
@@ -153,7 +151,6 @@ def evaluation(g, label, feat, train_idx, num_classes, batch_size,
 
         for it, (input_nodes, output_nodes,
                  blocks) in enumerate(train_dataloader):
-            torch.cuda.synchronize()
             sampling_time += time.time() - sampling_start
 
             x = cacher.fetch_data(input_nodes)
@@ -221,21 +218,29 @@ if __name__ == '__main__':
     g, label, feat, train_idx, num_classes = process_dataset(
         dataset, args.type)
 
+    hidden_dim = 256
+    model = SAGE(feat.shape[1], hidden_dim, num_classes)
+    fanout = [5, 5, 5]
     indptr_cache_set = [0, 1]
     indices_cache_set = [0, 1]
     prob_cache_set = [0, 1]
+    if torch.ops.dgs_ops._CAPI_get_rank() == 0:
+        print(
+            "Model GraphSAGE | Hidden dim {} | Batch size {} | Fanout {} | World Size {} | Dataset {} | Type {}"
+            .format(hidden_dim, args.batch_size, fanout,
+                    torch.ops.dgs_ops._CAPI_get_size(), args.dataset,
+                    args.type))
     for indptr_cache, indices_cache, prob_cache in zip(indptr_cache_set,
                                                        indices_cache_set,
                                                        prob_cache_set):
         sampling_time, epoch_time = evaluation(g, label, feat, train_idx,
-                                               num_classes, args.batch_size,
+                                               args.batch_size, fanout, model,
                                                indptr_cache, indices_cache,
                                                prob_cache)
         if torch.ops.dgs_ops._CAPI_get_rank() == 0:
             print(
-                "World Size {} | Dataset {} | Type {} | indptr cache size {:.1f} | indices cache size {:.1f} | probs cache size {:.1f} | Sampling time {:.3f} ms | Epoch time {:.3f} ms"
-                .format(torch.ops.dgs_ops._CAPI_get_size(), args.dataset,
-                        args.type, indptr_cache, indices_cache, prob_cache,
-                        sampling_time, epoch_time))
+                "Indptr cache size {:.1f} | Indices cache size {:.1f} | Probs cache size {:.1f} | Sampling time {:.3f} ms | Epoch time {:.3f} ms"
+                .format(indptr_cache, indices_cache, prob_cache, sampling_time,
+                        epoch_time))
 
     torch.ops.dgs_ops._CAPI_finalize()

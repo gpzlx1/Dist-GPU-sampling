@@ -99,7 +99,7 @@ def process_dataset(dataset, type):
     return g, label, feat, train_idx, dataset.num_classes
 
 
-def evaluation(g, label, feat, train_idx, num_classes, batch_size, mode):
+def evaluation(g, label, feat, train_idx, batch_size, fan_out, model, mode):
     local_rank = dist.get_rank()
     train_device = torch.device(local_rank)
     in_size = feat.shape[1]
@@ -117,14 +117,13 @@ def evaluation(g, label, feat, train_idx, num_classes, batch_size, mode):
         train_idx = train_idx.to("cuda")
         use_uva = True
 
-    # create GraphSAGE model
-    model = SAGE(in_size, 256, num_classes).to(train_device)
+    model = model.to(train_device)
     model = nn.parallel.DistributedDataParallel(model,
                                                 device_ids=[local_rank],
                                                 output_device=local_rank)
 
     # create sampler and dataloader
-    sampler = NeighborSampler([5, 5, 5], prob="prob")
+    sampler = NeighborSampler(fan_out, prob="prob")
     train_dataloader = DataLoader(g,
                                   train_idx,
                                   sampler,
@@ -155,7 +154,6 @@ def evaluation(g, label, feat, train_idx, num_classes, batch_size, mode):
 
         for it, (input_nodes, output_nodes,
                  blocks) in enumerate(train_dataloader):
-            torch.cuda.synchronize()
             sampling_time += time.time() - sampling_start
 
             x = cacher.fetch_data(input_nodes)
@@ -215,14 +213,19 @@ if __name__ == '__main__':
 
     g, label, feat, train_idx, num_classes = process_dataset(
         dataset, args.type)
-
+    hidden_dim = 256
+    model = SAGE(feat.shape[1], hidden_dim, num_classes)
+    fanout = [5, 5, 5]
     mode_set = ["cpu", "uva", "cuda"]
+    if dist.get_rank() == 0:
+        print(
+            "Model GraphSAGE | Hidden dim {} | Batch size {} | Fanout {} | World Size {} | Dataset {} | Type {}"
+            .format(hidden_dim, args.batch_size, fanout, dist.get_world_size(),
+                    args.dataset, args.type))
     for mode in mode_set:
         sampling_time, epoch_time = evaluation(g, label, feat, train_idx,
-                                               num_classes, args.batch_size,
+                                               args.batch_size, fanout, model,
                                                mode)
         if dist.get_rank() == 0:
-            print(
-                "World Size {} | Mode {} | Dataset {} | Type {} | Sampling time {:.3f} ms | Epoch time {:.3f} ms"
-                .format(dist.get_world_size(), mode, args.dataset, args.type,
-                        sampling_time, epoch_time))
+            print("Mode {} | Sampling time {:.3f} ms | Epoch time {:.3f} ms".
+                  format(mode, sampling_time, epoch_time))

@@ -60,19 +60,13 @@ class GraphCacheServer:
         if cache_rate != 1.0:
             self.capability = min(self.capability,
                                   int(self.node_num * cache_rate))
-        # print('Cache Memory: {:.2f}G. Capability: {}'.format(
-        #     available / 1024 / 1024 / 1024, self.capability))
         # Step3: cache
         if self.capability >= self.node_num:
             # fully cache
-            # print('cache the full graph...')
             full_nids = torch.arange(self.node_num).cuda(self.gpuid)
             self.cache_fix_data(full_nids, self.nfeats, is_full=True)
         else:
             # choose top-cap out-degree nodes to cache
-            # print(
-            #     'cache the part of graph... caching percentage: {:.4f}'.format(
-            #         self.capability / self.node_num))
 
             if "_P" in dgl_g.ndata and True:
                 sort_nid = torch.argsort(dgl_g.ndata["_P"], descending=True)
