@@ -102,7 +102,6 @@ def process_dataset(dataset, type):
 def evaluation(g, label, feat, train_idx, batch_size, fan_out, model, mode):
     local_rank = dist.get_rank()
     train_device = torch.device(local_rank)
-    in_size = feat.shape[1]
 
     if mode == 'cuda':
         g = g.to("cuda")
