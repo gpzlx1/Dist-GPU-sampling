@@ -1,19 +1,16 @@
+import argparse
+from dgl.data import RedditDataset, AsNodePredDataset
+import dgl.nn as dglnn
+from dgl.dataloading import DataLoader, NeighborSampler, MultiLayerFullNeighborSampler
+import numpy as np
+from ogb.nodeproppred import DglNodePropPredDataset
+import storage
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchmetrics.functional as MF
-import dgl
-import dgl.nn as dglnn
-from dgl.data import AsNodePredDataset
-from dgl.dataloading import DataLoader, NeighborSampler, MultiLayerFullNeighborSampler
-from ogb.nodeproppred import DglNodePropPredDataset
-import tqdm
-import argparse
-import time
-import numpy as np
 import torch.distributed as dist
-import os
-import storage
+import tqdm
 
 
 class SAGE(nn.Module):
@@ -73,40 +70,22 @@ class SAGE(nn.Module):
         return y
 
 
-def evaluate(model, graph, dataloader):
-    model.eval()
-    ys = []
-    y_hats = []
-    for it, (input_nodes, output_nodes, blocks) in enumerate(dataloader):
-        with torch.no_grad():
-            x = blocks[0].srcdata['feat']
-            ys.append(blocks[-1].dstdata['label'])
-            y_hats.append(model(blocks, x))
-    return MF.accuracy(torch.cat(y_hats), torch.cat(ys))
-
-
-def evaluation(args, dataset):
-    rank = dist.get_rank()
-    world_size = dist.get_world_size()
-
-    torch.cuda.set_device(rank)
-    device = torch.device(rank)
+def process_dataset(dataset, type):
+    local_rank = dist.get_rank()
+    comm_size = dist.get_world_size()
 
     g = dataset[0]
 
-    # create GraphSAGE model
-    in_size = g.ndata['feat'].shape[1]
-    out_size = dataset.num_classes
     feat = g.ndata.pop("feat")
     label = g.ndata.pop("label").cuda()
-    cacher = storage.GraphCacheServer(feat, g.num_nodes(), None, rank)
 
     train_idx = dataset.train_idx
     train_idx_num = train_idx.numel()
-    each_gpu_seeds_num = int(train_idx_num / world_size)
-    train_idx = train_idx[rank * each_gpu_seeds_num:(rank + 1) *
+    each_gpu_seeds_num = int(train_idx_num / comm_size)
+    train_idx = train_idx[local_rank * each_gpu_seeds_num:(local_rank + 1) *
                           each_gpu_seeds_num]
-    if args.type == "int":
+
+    if type == "int":
         g = g.formats(['csc']).int()
         train_idx = train_idx.int()
     else:
@@ -114,46 +93,68 @@ def evaluation(args, dataset):
         train_idx = train_idx.long()
     g.ndata.clear()
     g.edata.clear()
+    prob = torch.ones(g.num_edges()).float()
+    g.edata['prob'] = prob
 
-    if args.mode == 'gpu':
-        g = g.to(device)
-        train_idx = train_idx.to(device)
+    return g, label, feat, train_idx, dataset.num_classes
+
+
+def evaluation(g, label, feat, train_idx, batch_size, fan_out, model, mode):
+    local_rank = dist.get_rank()
+    train_device = torch.device(local_rank)
+
+    if mode == 'cuda':
+        g = g.to("cuda")
+        train_idx = train_idx.to("cuda")
         use_uva = False
-    elif args.mode == 'cpu':
+    elif mode == 'cpu':
         g = g.to("cpu")
         train_idx = train_idx.to("cpu")
         use_uva = False
-    elif args.mode == 'uva':
+    elif mode == 'uva':
         g = g.to("cpu")
-        train_idx = train_idx.to(device)
+        train_idx = train_idx.to("cuda")
         use_uva = True
 
-    model = SAGE(in_size, 256, out_size).to(device)
+    model = model.to(train_device)
     model = nn.parallel.DistributedDataParallel(model,
-                                                device_ids=[rank],
-                                                output_device=rank)
+                                                device_ids=[local_rank],
+                                                output_device=local_rank)
 
-    sampler = NeighborSampler([5, 10, 15])
+    # create sampler and dataloader
+    sampler = NeighborSampler(fan_out, prob="prob")
     train_dataloader = DataLoader(g,
                                   train_idx,
                                   sampler,
-                                  device=device,
-                                  batch_size=args.batch_size,
+                                  device=train_device,
+                                  batch_size=batch_size,
                                   shuffle=True,
                                   drop_last=False,
                                   num_workers=0,
-                                  use_uva=use_uva,
-                                  use_ddp=True)
+                                  use_uva=use_uva)
+
+    # pagraph cache
+    cacher = storage.GraphCacheServer(feat, g.num_nodes(), gpuid=local_rank)
+    cacher.auto_cache(g, None, 1, train_idx)
+
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
 
-    time_log = []
+    sampling_time_list = []
+    epoch_time_list = []
     for epoch in range(3):
+
         model.train()
         total_loss = 0
+        sampling_time = 0
 
-        start = time.time()
+        torch.cuda.synchronize()
+        epoch_start = time.time()
+        sampling_start = time.time()
+
         for it, (input_nodes, output_nodes,
                  blocks) in enumerate(train_dataloader):
+            sampling_time += time.time() - sampling_start
+
             x = cacher.fetch_data(input_nodes)
             y = label[output_nodes]
             y_hat = model(blocks, x)
@@ -162,50 +163,68 @@ def evaluation(args, dataset):
             loss.backward()
             opt.step()
             total_loss += loss.item()
-            if epoch == 0 and it == 1:
-                cacher.auto_cache(g, None, args.cpfeat, train_idx)
 
-        time_log.append(time.time() - start)
+            torch.cuda.synchronize()
+            sampling_start = time.time()
 
-    if rank == 0:
-        print(
-            "World Size {} | Mode {} | Dataset {} | Type {} | Epoch time {:.3f} ms"
-            .format(world_size, args.mode, args.dataset, args.type,
-                    np.mean(time_log[1:]) * 1000))
+        torch.cuda.synchronize()
+        epoch_end = time.time()
+
+        sampling_time_list.append(sampling_time)
+        epoch_time_list.append(epoch_end - epoch_start)
+
+    avg_sampling_time = np.mean(sampling_time_list[1:]) * 1000
+    avg_epoch_time = np.mean(epoch_time_list[1:]) * 1000
+
+    return avg_sampling_time, avg_epoch_time
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", default='uva', choices=['cpu', 'uva', 'gpu'])
-    parser.add_argument("--dataset", default='reddit')
-    parser.add_argument("--cpfeat",
-                        default=0,
-                        type=float,
-                        help="cache percentage of features")
     parser.add_argument("--type",
                         default="long",
                         choices=["int", "long"],
                         help="Type for tensor, choose from 'int' and 'long'.")
+    parser.add_argument("--dataset",
+                        default="reddit",
+                        choices=["reddit", "ogbn-products", "ogbn-papers100M"],
+                        help="The dataset to be sampled.")
     parser.add_argument("--batch-size",
                         default="5000",
                         type=int,
                         help="The number of seeds of sampling.")
     args = parser.parse_args()
-    print('Loading data')
-
-    if args.dataset == "reddit":
-        dataset = AsNodePredDataset(dgl.data.RedditDataset(self_loop=True))
-    elif args.dataset == "ogbn-products":
-        dataset = AsNodePredDataset(
-            DglNodePropPredDataset('ogbn-products',
-                                   root="/data/graph/ogbn-products"))
-    else:
-        print("wrong dataset")
-        exit()
-    # g = dataset[0]
 
     torch.manual_seed(1)
     torch.set_num_threads(1)
     dist.init_process_group(backend='nccl', init_method="env://")
+    local_rank = dist.get_rank()
+    torch.cuda.set_device(local_rank)
 
-    evaluation(args, dataset)
+    if (args.dataset == "reddit"):
+        dataset = AsNodePredDataset(RedditDataset(self_loop=True))
+    elif (args.dataset == "ogbn-products"):
+        dataset = AsNodePredDataset(
+            DglNodePropPredDataset("ogbn-products", root="/data/nfs/"))
+    elif (args.dataset == "ogbn-papers100M"):
+        dataset = AsNodePredDataset(
+            DglNodePropPredDataset("ogbn-papers100M", root="/data/nfs/"))
+
+    g, label, feat, train_idx, num_classes = process_dataset(
+        dataset, args.type)
+    hidden_dim = 256
+    model = SAGE(feat.shape[1], hidden_dim, num_classes)
+    fanout = [5, 5, 5]
+    mode_set = ["cpu", "uva", "cuda"]
+    if dist.get_rank() == 0:
+        print(
+            "Model GraphSAGE | Hidden dim {} | Batch size {} | Fanout {} | World Size {} | Dataset {} | Type {}"
+            .format(hidden_dim, args.batch_size, fanout, dist.get_world_size(),
+                    args.dataset, args.type))
+    for mode in mode_set:
+        sampling_time, epoch_time = evaluation(g, label, feat, train_idx,
+                                               args.batch_size, fanout, model,
+                                               mode)
+        if dist.get_rank() == 0:
+            print("Mode {} | Sampling time {:.3f} ms | Epoch time {:.3f} ms".
+                  format(mode, sampling_time, epoch_time))

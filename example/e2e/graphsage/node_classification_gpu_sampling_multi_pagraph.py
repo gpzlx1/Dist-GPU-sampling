@@ -1,20 +1,18 @@
+import argparse
+from dgl.data import RedditDataset, AsNodePredDataset
+import dgl.nn as dglnn
+from dgl.dataloading import DataLoader, MultiLayerFullNeighborSampler
+import numpy as np
+from ogb.nodeproppred import DglNodePropPredDataset
+import os
+from sampler import ChunkTensorSampler
+import storage
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchmetrics.functional as MF
-import dgl
-import dgl.nn as dglnn
-from dgl.data import AsNodePredDataset
-from dgl.dataloading import DataLoader, MultiLayerFullNeighborSampler
-from ogb.nodeproppred import DglNodePropPredDataset
-import tqdm
-import argparse
-from sampler import gpu_sampler
-import time
-import numpy as np
 import torch.distributed as dist
-import os
-import storage
+import tqdm
 
 
 class SAGE(nn.Module):
@@ -74,78 +72,87 @@ class SAGE(nn.Module):
         return y
 
 
-def evaluate(model, graph, dataloader):
-    model.eval()
-    ys = []
-    y_hats = []
-    for it, (input_nodes, output_nodes, blocks) in enumerate(dataloader):
-        with torch.no_grad():
-            x = blocks[0].srcdata['feat']
-            ys.append(blocks[-1].dstdata['label'])
-            y_hats.append(model(blocks, x))
-    return MF.accuracy(torch.cat(y_hats), torch.cat(ys))
-
-
-def train(args, dataset):
-    rank = dist.get_rank()
-    world_size = dist.get_world_size()
-
-    torch.cuda.set_device(rank)
-    device = torch.device(rank)
+def process_dataset(dataset, type):
+    local_rank = torch.ops.dgs_ops._CAPI_get_rank()
+    comm_size = torch.ops.dgs_ops._CAPI_get_size()
 
     g = dataset[0]
 
-    # create GraphSAGE model
-    in_size = g.ndata['feat'].shape[1]
-    out_size = dataset.num_classes
     feat = g.ndata.pop("feat")
     label = g.ndata.pop("label").cuda()
-    cacher = storage.GraphCacheServer(feat, g.num_nodes(), None, rank)
-
-    model = SAGE(in_size, 256, out_size).to(device)
-    model = nn.parallel.DistributedDataParallel(model,
-                                                device_ids=[rank],
-                                                output_device=rank)
 
     train_idx = dataset.train_idx
     train_idx_num = train_idx.numel()
-    each_gpu_seeds_num = int(train_idx_num / world_size)
-    train_idx = train_idx[rank * each_gpu_seeds_num:(rank + 1) *
+    each_gpu_seeds_num = int(train_idx_num / comm_size)
+    train_idx = train_idx[local_rank * each_gpu_seeds_num:(local_rank + 1) *
                           each_gpu_seeds_num]
-    if args.type == "int":
+
+    if type == "int":
+        g = g.formats(['csc']).int()
         train_idx = train_idx.int()
     else:
+        g = g.formats(['csc']).long()
         train_idx = train_idx.long()
+    g.ndata.clear()
+    g.edata.clear()
+    prob = torch.ones(g.num_edges()).float()
+    g.edata['prob'] = prob
 
-    train_idx = dataset.train_idx.to(device)
-    sampler = gpu_sampler([5, 10, 15],
-                          g,
-                          cache_percent_indptr=args.cpindptr,
-                          cache_percent_indices=args.cpindices,
-                          rank=rank,
-                          world_size=world_size,
-                          type=args.type)
-    use_uva = True
+    return g, label, feat, train_idx, dataset.num_classes
+
+
+def evaluation(g, label, feat, train_idx, batch_size, fan_out, model,
+               cache_percent_indptr, cache_percent_indices,
+               cache_percent_probs):
+    local_rank = torch.ops.dgs_ops._CAPI_get_rank()
+    comm_size = torch.ops.dgs_ops._CAPI_get_size()
+    train_device = torch.device(local_rank)
+
+    model = model.to(train_device)
+    model = nn.parallel.DistributedDataParallel(model,
+                                                device_ids=[local_rank],
+                                                output_device=local_rank)
+
+    # create sampler and dataloader
+    sampler = ChunkTensorSampler(fan_out,
+                                 g,
+                                 prob="prob",
+                                 cache_percent_indices=cache_percent_indices,
+                                 cache_percent_indptr=cache_percent_indptr,
+                                 cache_percent_probs=cache_percent_probs,
+                                 comm_size=comm_size)
     train_dataloader = DataLoader(g,
                                   train_idx,
                                   sampler,
-                                  device=device,
-                                  batch_size=args.batch_size,
+                                  device=train_device,
+                                  batch_size=batch_size,
                                   shuffle=True,
                                   drop_last=False,
                                   num_workers=0,
-                                  use_uva=use_uva,
-                                  use_ddp=True)
+                                  use_uva=True)
+
+    # pagraph cache
+    cacher = storage.GraphCacheServer(feat, g.num_nodes(), gpuid=local_rank)
+    cacher.auto_cache(g, None, 1, train_idx)
+
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
 
-    time_log = []
+    sampling_time_list = []
+    epoch_time_list = []
     for epoch in range(3):
+
         model.train()
         total_loss = 0
+        sampling_time = 0
 
-        start = time.time()
+        torch.cuda.synchronize()
+        epoch_start = time.time()
+        sampling_start = time.time()
+
         for it, (input_nodes, output_nodes,
                  blocks) in enumerate(train_dataloader):
+            sampling_time += time.time() - sampling_start
+
             x = cacher.fetch_data(input_nodes)
             y = label[output_nodes]
             y_hat = model(blocks, x)
@@ -154,70 +161,86 @@ def train(args, dataset):
             loss.backward()
             opt.step()
             total_loss += loss.item()
-            if epoch == 0 and it == 1:
-                cacher.auto_cache(g, None, args.cpfeat, train_idx)
 
-        time_log.append(time.time() - start)
+            torch.cuda.synchronize()
+            sampling_start = time.time()
 
-    if rank == 0:
-        print(
-            "World Size {} | Dataset {} | Type {} | indptr cache size {:.1f} | indices cache size {:.1f} | Epoch time {:.3f} ms"
-            .format(world_size, args.dataset, args.type, args.cpindptr,
-                    args.cpindices,
-                    np.mean(time_log[1:]) * 1000))
+        torch.cuda.synchronize()
+        epoch_end = time.time()
 
-    del sampler
-    torch.ops.dgs_ops._CAPI_finalize()
+        sampling_time_list.append(sampling_time)
+        epoch_time_list.append(epoch_end - epoch_start)
+
+    avg_sampling_time = np.mean(sampling_time_list[1:]) * 1000
+    avg_epoch_time = np.mean(epoch_time_list[1:]) * 1000
+
+    return avg_sampling_time, avg_epoch_time
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default='reddit')
-    parser.add_argument("--cpindices",
-                        default=0,
-                        type=float,
-                        help="cache percentage of indices")
-    parser.add_argument("--cpindptr",
-                        default=0,
-                        type=float,
-                        help="cache percentage of indptr")
-    parser.add_argument("--cpfeat",
-                        default=0,
-                        type=float,
-                        help="cache percentage of features")
     parser.add_argument("--type",
                         default="long",
                         choices=["int", "long"],
                         help="Type for tensor, choose from 'int' and 'long'.")
+    parser.add_argument("--dataset",
+                        default="reddit",
+                        choices=["reddit", "ogbn-products", "ogbn-papers100M"],
+                        help="The dataset to be sampled.")
     parser.add_argument("--batch-size",
                         default="5000",
                         type=int,
                         help="The number of seeds of sampling.")
-
     args = parser.parse_args()
-    print('Loading data')
-
-    if args.dataset == "reddit":
-        dataset = AsNodePredDataset(dgl.data.RedditDataset(self_loop=True))
-    elif args.dataset == "ogbn-products":
-        dataset = AsNodePredDataset(
-            DglNodePropPredDataset('ogbn-products',
-                                   root="/data/graph/ogbn-products"))
-    else:
-        print("wrong dataset")
-        exit()
-    # g = dataset[0]
 
     torch.manual_seed(1)
-    torch.set_num_threads(1)
     torch.ops.load_library("./build/libdgs.so")
     torch.ops.dgs_ops._CAPI_initialize()
+    torch.set_num_threads(1)
+    torch.cuda.set_device(torch.ops.dgs_ops._CAPI_get_rank())
+    os.environ["RANK"] = str(torch.ops.dgs_ops._CAPI_get_rank())
+    os.environ["WORLD_SIZE"] = str(torch.ops.dgs_ops._CAPI_get_size())
     if "MASTER_ADDR" not in os.environ:
         os.environ["MASTER_ADDR"] = "localhost"
     if "MASTER_PORT" not in os.environ:
-        os.environ["MASTER_PORT"] = "12345"
-    os.environ["RANK"] = str(torch.ops.dgs_ops._CAPI_get_rank())
-    os.environ["WORLD_SIZE"] = str(torch.ops.dgs_ops._CAPI_get_size())
+        os.environ["MASTER_PORT"] = "12335"
     dist.init_process_group(backend='nccl', init_method="env://")
 
-    train(args, dataset)
+    if (args.dataset == "reddit"):
+        dataset = AsNodePredDataset(RedditDataset(self_loop=True))
+    elif (args.dataset == "ogbn-products"):
+        dataset = AsNodePredDataset(
+            DglNodePropPredDataset("ogbn-products", root="/data/nfs/"))
+    elif (args.dataset == "ogbn-papers100M"):
+        dataset = AsNodePredDataset(
+            DglNodePropPredDataset("ogbn-papers100M", root="/data/nfs/"))
+
+    g, label, feat, train_idx, num_classes = process_dataset(
+        dataset, args.type)
+
+    hidden_dim = 256
+    model = SAGE(feat.shape[1], hidden_dim, num_classes)
+    fanout = [5, 5, 5]
+    indptr_cache_set = [0, 1]
+    indices_cache_set = [0, 1]
+    prob_cache_set = [0, 1]
+    if torch.ops.dgs_ops._CAPI_get_rank() == 0:
+        print(
+            "Model GraphSAGE | Hidden dim {} | Batch size {} | Fanout {} | World Size {} | Dataset {} | Type {}"
+            .format(hidden_dim, args.batch_size, fanout,
+                    torch.ops.dgs_ops._CAPI_get_size(), args.dataset,
+                    args.type))
+    for indptr_cache, indices_cache, prob_cache in zip(indptr_cache_set,
+                                                       indices_cache_set,
+                                                       prob_cache_set):
+        sampling_time, epoch_time = evaluation(g, label, feat, train_idx,
+                                               args.batch_size, fanout, model,
+                                               indptr_cache, indices_cache,
+                                               prob_cache)
+        if torch.ops.dgs_ops._CAPI_get_rank() == 0:
+            print(
+                "Indptr cache size {:.1f} | Indices cache size {:.1f} | Probs cache size {:.1f} | Sampling time {:.3f} ms | Epoch time {:.3f} ms"
+                .format(indptr_cache, indices_cache, prob_cache, sampling_time,
+                        epoch_time))
+
+    torch.ops.dgs_ops._CAPI_finalize()
