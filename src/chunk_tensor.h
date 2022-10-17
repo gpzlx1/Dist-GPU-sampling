@@ -4,8 +4,8 @@
 #include <torch/script.h>
 
 #include "./cuda_common.h"
-#include "./mpi_context.h"
 #include "./utils.h"
+#include "nccl_context.h"
 
 namespace dgs {
 
@@ -46,8 +46,8 @@ class ChunkTensor : public torch::CustomClassHolder {
  public:
   ChunkTensor(torch::Tensor data, int64_t capacity_per_gpu) {
     CHECK_CPU(data);
-    int64_t local_rank = mpi::local_rank;
-    num_partitions_ = mpi::global_comm_size;
+    int64_t local_rank = nccl::local_rank;
+    num_partitions_ = nccl::world_size;
 
     total_tensor_size_ = data.numel();
     type_ = torch::typeMetaToScalarType(data.dtype());
@@ -87,9 +87,19 @@ class ChunkTensor : public torch::CustomClassHolder {
       cudaIpcMemHandle_t ipc_device_mem_handle_recvbuff[num_partitions_];
 
       CUDA_CALL(cudaIpcGetMemHandle(&ipc_device_mem_handle, uva_device_ptr));
-      MPI_Allgather(&ipc_device_mem_handle, sizeof(cudaIpcMemHandle_t),
-                    MPI_BYTE, ipc_device_mem_handle_recvbuff,
-                    sizeof(cudaIpcMemHandle_t), MPI_BYTE, mpi::global_comm);
+      CUDA_CALL(cudaHostRegister(&ipc_device_mem_handle,
+                                 sizeof(cudaIpcMemHandle_t),
+                                 cudaHostRegisterDefault));
+      CUDA_CALL(cudaHostRegister(ipc_device_mem_handle_recvbuff,
+                                 sizeof(cudaIpcMemHandle_t) * num_partitions_,
+                                 cudaHostRegisterDefault));
+      NCCL_CALL(ncclAllGather(&ipc_device_mem_handle,
+                              ipc_device_mem_handle_recvbuff,
+                              sizeof(cudaIpcMemHandle_t), ncclChar,
+                              nccl::global_comm, nccl::nccl_stream));
+      nccl::_Barrier();
+      CUDA_CALL(cudaHostUnregister(&ipc_device_mem_handle));
+      CUDA_CALL(cudaHostUnregister(ipc_device_mem_handle_recvbuff));
 
       // after communication, setup uva_device_ptrs_;
       for (int i = 0; i < int(uva_device_ptrs_.size()); i++) {
@@ -125,7 +135,7 @@ class ChunkTensor : public torch::CustomClassHolder {
 
   torch::Tensor GetSubDeviceTensor() {
     return torch::from_blob(
-        uva_device_ptrs_[mpi::local_rank], partion_device_tensor_size_,
+        uva_device_ptrs_[nccl::local_rank], partion_device_tensor_size_,
         torch::TensorOptions().dtype(type_).device(torch::kCUDA));
   }
 
@@ -145,7 +155,7 @@ class ChunkTensor : public torch::CustomClassHolder {
     CUDA_CALL(cudaFree(uva_device_ptrs_data_));
     CUDA_CALL(cudaFree(wrapper_ptr_));
 
-    int local_rank = mpi::local_rank;
+    int local_rank = nccl::local_rank;
     CUDA_CALL(cudaHostUnregister(uva_host_ptr_));
     host_tensor_ = torch::Tensor();
 
@@ -153,7 +163,7 @@ class ChunkTensor : public torch::CustomClassHolder {
       if (local_rank != i)
         CUDA_CALL(cudaIpcCloseMemHandle(uva_device_ptrs_[i]);)
     }
-    MPI_Barrier(mpi::global_comm);
+    nccl::_Barrier();
     CUDA_CALL(cudaFree(uva_device_ptrs_[local_rank]));
   }
 
