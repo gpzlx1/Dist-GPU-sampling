@@ -62,18 +62,11 @@ class ChunkTensor : public torch::CustomClassHolder {
           (total_tensor_size_ + num_partitions_ - 1) / num_partitions_;
     }
 
-    // cudaMallocHost for uva_host_ptr_
-    if (threshold_ < total_tensor_size_) {
-      CUDA_CALL(
-          cudaMallocHost(&uva_host_ptr_, total_tensor_size_ * type_size_t_));
-      CUDA_CALL(cudaMemcpy(uva_host_ptr_, utils::_getTensorVoidDataPtr(data),
-                           total_tensor_size_ * type_size_t_,
-                           cudaMemcpyHostToHost));
-    } else {
-      // Dist-Graph has been fully stored on GPUs. So, we no need to
-      // cudaMallocHost for uva_host_ptr_
-      uva_host_ptr_ = nullptr;
-    }
+    // cudaHostRegister for uva_host_ptr_
+    host_tensor_ = data;  // avoid data are freed.
+    uva_host_ptr_ = utils::_getTensorVoidDataPtr(data);
+    CUDA_CALL(cudaHostRegister(uva_host_ptr_, total_tensor_size_ * type_size_t_,
+                               cudaHostRegisterDefault));
 
     void *uva_device_ptr = nullptr;
     size_t each_partion_size_t = partion_device_tensor_size_ * type_size_t_;
@@ -153,9 +146,8 @@ class ChunkTensor : public torch::CustomClassHolder {
     CUDA_CALL(cudaFree(wrapper_ptr_));
 
     int local_rank = mpi::local_rank;
-    if (uva_host_ptr_ != nullptr) {
-      CUDA_CALL(cudaFreeHost(uva_host_ptr_));
-    }
+    CUDA_CALL(cudaHostUnregister(uva_host_ptr_));
+    host_tensor_ = torch::Tensor();
 
     for (int i = 0; i < num_partitions_; i++) {
       if (local_rank != i)
@@ -180,6 +172,8 @@ class ChunkTensor : public torch::CustomClassHolder {
   thrust::host_vector<void *> uva_device_ptrs_;
 
   void *wrapper_ptr_ = nullptr;
+
+  torch::Tensor host_tensor_;
 };
 }  // namespace dgs
 
