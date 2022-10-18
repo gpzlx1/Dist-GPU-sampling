@@ -3,6 +3,7 @@
 
 #include "./chunk_tensor.h"
 #include "./dgs_ops.h"
+#include "nccl_context.h"
 
 using namespace dgs;
 
@@ -15,16 +16,14 @@ TORCH_LIBRARY(dgs_classes, m) {
 
 TORCH_LIBRARY(dgs_ops, m) {
   m.def("_CAPI_hello_world", &hello_world_from_gpu)
-      .def("_CAPI_initialize", &mpi::Initialize)
-      .def("_CAPI_finalize", &mpi::Finalize)
       .def("_CAPI_test_chunk_tensor", &test_chunk_tensor)
-      .def("_CAPI_get_rank", &mpi::GetRank)
-      .def("_CAPI_get_size", &mpi::GetSize)
       .def("_CAPI_tensor_relabel", &TensorRelabel)
       .def("_CAPI_sample_neighbors", &RowWiseSamplingUniform)
       .def("_CAPI_sample_neighbors_with_chunk_tensor",
            &RowWiseSamplingUniformWithChunkTensor)
       .def("_CAPI_sample_neighbors_with_probs", &RowWiseSamplingProb)
       .def("_CAPI_sample_neighbors_with_probs_with_chunk_tensor",
-           &RowWiseSamplingProbWithChunkTensor);
+           &RowWiseSamplingProbWithChunkTensor)
+      .def("_CAPI_get_unique_id", &nccl::GetUniqueId)
+      .def("_CAPI_set_nccl", &nccl::SetNCCL);
 }

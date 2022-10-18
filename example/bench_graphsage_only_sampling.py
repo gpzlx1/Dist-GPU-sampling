@@ -1,4 +1,3 @@
-import os
 import argparse
 import time
 import torch
@@ -8,6 +7,9 @@ from ogb.nodeproppred import DglNodePropPredDataset
 import numpy as np
 import dgl
 from dataloader import SeedGenerator
+from dgs_create_communicator import create_dgs_communicator
+
+torch.ops.load_library("./build/libdgs.so")
 
 
 def load_reddit(self_loop=True):
@@ -58,22 +60,14 @@ def load_ogbn_papers100m(root="dataset"):
 
 def evaluation(type, dataset, batch_size):
     torch.manual_seed(1)
-    torch.ops.load_library("./build/libdgs.so")
-    torch.ops.dgs_ops._CAPI_initialize()
-    torch.set_num_threads(1)
-    torch.cuda.set_device(torch.ops.dgs_ops._CAPI_get_rank())
-    os.environ["RANK"] = str(torch.ops.dgs_ops._CAPI_get_rank())
-    os.environ["WORLD_SIZE"] = str(torch.ops.dgs_ops._CAPI_get_size())
 
-    local_rank = torch.ops.dgs_ops._CAPI_get_rank()
-    comm_size = torch.ops.dgs_ops._CAPI_get_size()
-
-    if "MASTER_ADDR" not in os.environ:
-        os.environ["MASTER_ADDR"] = "localhost"
-    if "MASTER_PORT" not in os.environ:
-        os.environ["MASTER_PORT"] = "12335"
-
+    # init dist
     dist.init_process_group(backend='nccl', init_method="env://")
+    local_rank = dist.get_rank()
+    comm_size = dist.get_world_size()
+    torch.set_num_threads(1)
+    torch.cuda.set_device(local_rank)
+    create_dgs_communicator(comm_size, local_rank)
 
     if (dataset == "reddit"):
         g, _ = load_reddit()
@@ -112,11 +106,8 @@ def evaluation(type, dataset, batch_size):
             if local_rank == 0:
                 print(
                     "World Size {} | Device {} | Dataset {} | Type {} | indptr cache size {:.1f} | indices cache size {:.1f} | sampling time {:.3f} ms"
-                    .format(comm_size, torch.ops.dgs_ops._CAPI_get_rank(),
-                            dataset, type, indptr_cache, indices_cache,
-                            avg_sample_time))
-
-    torch.ops.dgs_ops._CAPI_finalize()
+                    .format(comm_size, local_rank, dataset, type, indptr_cache,
+                            indices_cache, avg_sample_time))
 
 
 def bench(indptr, indices, train_nid, batch_size, type_size, indptr_cache,
@@ -125,11 +116,11 @@ def bench(indptr, indices, train_nid, batch_size, type_size, indptr_cache,
     chunk_indptr = torch.classes.dgs_classes.ChunkTensor(
         indptr,
         int((indptr.numel() * type_size * indptr_cache) /
-            torch.ops.dgs_ops._CAPI_get_size()) + type_size)
+            dist.get_world_size()) + type_size)
     chunk_indices = torch.classes.dgs_classes.ChunkTensor(
         indices,
         int((indices.numel() * type_size * indices_cache) /
-            torch.ops.dgs_ops._CAPI_get_size()) + type_size)
+            dist.get_world_size()) + type_size)
 
     time_list = []
     for _ in range(3):
