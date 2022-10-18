@@ -1,0 +1,3 @@
+[submodule "dgs-bench"]
+	path = dgs-bench
+	url = git@github.com:CommediaJW/dgs-bench.git
