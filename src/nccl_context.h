@@ -5,8 +5,7 @@
 #include <torch/script.h>
 #include "cuda_common.h"
 
-#define AlignUp(X, ALIGN_SIZE) \
-  (((X) + (ALIGN_SIZE)-1) / (ALIGN_SIZE) * (ALIGN_SIZE))
+#define AlignUp(X, ALIGN_SIZE) (((X) + (ALIGN_SIZE)-1) / (ALIGN_SIZE))
 
 #define NCCL_CALL(X)                                                           \
   do {                                                                         \
