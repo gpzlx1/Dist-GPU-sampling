@@ -23,6 +23,11 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingProbWithChunkTensor(
     torch::Tensor seeds, c10::intrusive_ptr<ChunkTensor> indptr,
     c10::intrusive_ptr<ChunkTensor> indices,
     c10::intrusive_ptr<ChunkTensor> probs, int64_t num_picks, bool replace);
+std::tuple<torch::Tensor, torch::Tensor> CreateHashMapTensor(
+    torch::Tensor input_key, torch::Tensor input_value);
+torch::Tensor FetchData(torch::Tensor cpu_data, torch::Tensor gpu_data,
+                        torch::Tensor nid, torch::Tensor hashed_key_tensor,
+                        torch::Tensor hashed_value_tensor);
 }  // namespace dgs
 
 #endif
