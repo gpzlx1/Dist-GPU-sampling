@@ -21,7 +21,7 @@ struct Hashmap {
       prev = atomic::AtomicCAS(&kptr[pos], kEmptyKey, key);
     }
 
-    atomic::AtomicMin(vptr + pos, value);
+    vptr[pos] = value;
   }
 
   __device__ inline IdType SearchForPos(IdType key) {
