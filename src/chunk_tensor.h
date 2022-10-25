@@ -1,6 +1,7 @@
 #ifndef DGS_CHUNK_TENSOR_H_
 #define DGS_CHUNK_TENSOR_H_
 
+#include <c10/cuda/CUDACachingAllocator.h>
 #include <torch/script.h>
 
 #include "./cuda_common.h"
@@ -70,9 +71,14 @@ class ChunkTensor : public torch::CustomClassHolder {
     CUDA_CALL(cudaHostRegister(uva_host_ptr_, total_tensor_size_ * type_size_t_,
                                cudaHostRegisterDefault));
 
-    void *uva_device_ptr = nullptr;
+    // Malloc for uva_device_ptr/uva_device_ptrs_
+    // use CUDACachingAllocator, so torch.cuda.max_memory_allocated can read how
+    // much memory is allocated for chunk tensor
     size_t each_partion_size_t = partion_device_tensor_size_ * type_size_t_;
-    CUDA_CALL(cudaMalloc(&uva_device_ptr, each_partion_size_t));
+    c10::Allocator *cuda_allocator = c10::cuda::CUDACachingAllocator::get();
+    uva_device_data_ = cuda_allocator->allocate(each_partion_size_t);
+    void *uva_device_ptr = uva_device_data_.get();
+
     CUDA_CALL(cudaMemset(uva_device_ptr, -1, each_partion_size_t));
     CUDA_CALL(cudaMemcpy(
         uva_device_ptr,
@@ -168,7 +174,10 @@ class ChunkTensor : public torch::CustomClassHolder {
         CUDA_CALL(cudaIpcCloseMemHandle(uva_device_ptrs_[i]);)
     }
     nccl::_Barrier();
-    CUDA_CALL(cudaFree(uva_device_ptrs_[local_rank]));
+
+    // free uva_device_ptrs_. We do nothing here.
+    // Because we use CUDACachingAllocator to malloc device memory for
+    // uva_device_ptrs_ and it will automatically free memory space.
   }
 
   torch::Dtype type_;
@@ -184,6 +193,7 @@ class ChunkTensor : public torch::CustomClassHolder {
 
   void *uva_host_ptr_ = nullptr;
   void **uva_device_ptrs_data_ = nullptr;
+  c10::DataPtr uva_device_data_;
   thrust::host_vector<void *> uva_device_ptrs_;
 
   void *wrapper_ptr_ = nullptr;
