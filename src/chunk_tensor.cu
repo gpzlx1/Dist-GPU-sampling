@@ -27,8 +27,7 @@ void __global__ _IndexMemcpyKernel(chunk_tensor_wrapper<ValueType>* data,
 }
 
 torch::Tensor ChunkTensor::Index(torch::Tensor index) {
-  // typedef int32_t ValueType;
-  // typedef int32_t IndexType;
+  CHECK_CUDA(index);
   DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
     DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
       int num_items = index.numel();
