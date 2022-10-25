@@ -45,11 +45,13 @@ struct chunk_tensor_wrapper {
 class ChunkTensor : public torch::CustomClassHolder {
  public:
   ChunkTensor(torch::Tensor data, int64_t capacity_per_gpu) {
+    CHECK(data.dim() == 1 or data.dim() == 2);
     CHECK_CPU(data);
     int64_t local_rank = nccl::local_rank;
     num_partitions_ = nccl::world_size;
 
     total_tensor_size_ = data.numel();
+    stride_ = data.stride(0);
     type_ = torch::typeMetaToScalarType(data.dtype());
     type_size_t_ = utils::_getTensorTypeSizeOf(type_);
     partion_device_tensor_size_ = capacity_per_gpu / type_size_t_;
@@ -139,6 +141,8 @@ class ChunkTensor : public torch::CustomClassHolder {
         torch::TensorOptions().dtype(type_).device(torch::kCUDA));
   }
 
+  torch::Tensor Index(torch::Tensor index);
+
   void _CreateWrapperPtr() {
     DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
       chunk_tensor_wrapper<ValueType> wrapper(
@@ -173,6 +177,7 @@ class ChunkTensor : public torch::CustomClassHolder {
 
   int64_t partion_device_tensor_size_;
   int64_t total_tensor_size_;
+  int64_t stride_;
 
   int64_t threshold_;
   int64_t num_partitions_;
