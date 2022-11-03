@@ -28,6 +28,12 @@ std::tuple<torch::Tensor, torch::Tensor> CreateHashMapTensor(
 torch::Tensor FetchData(torch::Tensor cpu_data, torch::Tensor gpu_data,
                         torch::Tensor nid, torch::Tensor hashed_key_tensor,
                         torch::Tensor hashed_value_tensor);
+torch::Tensor FetchDataWithChunkTensor(torch::Tensor cpu_data,
+                                       c10::intrusive_ptr<ChunkTensor> gpu_data,
+                                       torch::Tensor nid,
+                                       torch::Tensor hashed_key_tensor,
+                                       torch::Tensor hashed_value_tensor);
+
 }  // namespace dgs
 
 #endif
