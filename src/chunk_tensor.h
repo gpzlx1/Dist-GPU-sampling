@@ -6,6 +6,7 @@
 
 #include "./cuda_common.h"
 #include "./utils.h"
+#include "cuda_context.h"
 #include "nccl_context.h"
 
 namespace dgs {
@@ -77,6 +78,7 @@ class ChunkTensor : public torch::CustomClassHolder {
     size_t each_partion_size_t = partion_device_tensor_size_ * type_size_t_;
     void *uva_device_ptr = nullptr;
     CUDA_CALL(cudaMalloc(&uva_device_ptr, each_partion_size_t));
+    CUDAContext::cuda_context.Increase(each_partion_size_t);
 
     CUDA_CALL(cudaMemset(uva_device_ptr, -1, each_partion_size_t));
     CUDA_CALL(cudaMemcpy(
@@ -176,6 +178,8 @@ class ChunkTensor : public torch::CustomClassHolder {
 
     // free uva_device_ptrs_.
     CUDA_CALL(cudaFree(uva_device_ptrs_[local_rank]));
+    CUDAContext::cuda_context.Decrease(partion_device_tensor_size_ *
+                                       type_size_t_);
   }
 
   torch::Dtype type_;
