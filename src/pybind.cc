@@ -3,6 +3,7 @@
 
 #include "./chunk_tensor.h"
 #include "./dgs_ops.h"
+#include "cuda_context.h"
 #include "nccl_context.h"
 
 using namespace dgs;
@@ -29,5 +30,6 @@ TORCH_LIBRARY(dgs_ops, m) {
       .def("_CAPI_set_nccl", &nccl::SetNCCL)
       .def("_CAPI_create_hash_map", &CreateHashMapTensor)
       .def("_CAPI_fetch_data", &FetchData)
-      .def("_CAPI_fetch_data_chunk_tensor", &FetchDataWithChunkTensor);
+      .def("_CAPI_fetch_data_chunk_tensor", &FetchDataWithChunkTensor)
+      .def("_CAPI_get_current_allocated", &CUDAContext::GetCurrAllocated);
 }
