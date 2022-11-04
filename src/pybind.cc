@@ -28,5 +28,6 @@ TORCH_LIBRARY(dgs_ops, m) {
       .def("_CAPI_get_unique_id", &nccl::GetUniqueId)
       .def("_CAPI_set_nccl", &nccl::SetNCCL)
       .def("_CAPI_create_hash_map", &CreateHashMapTensor)
-      .def("_CAPI_fetch_data", &FetchData);
+      .def("_CAPI_fetch_data", &FetchData)
+      .def("_CAPI_fetch_data_chunk_tensor", &FetchDataWithChunkTensor);
 }

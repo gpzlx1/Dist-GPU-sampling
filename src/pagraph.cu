@@ -88,39 +88,34 @@ inline int _UpPower(int key) {
   return ret;
 }
 
-template <typename IdType>
-inline std::tuple<torch::Tensor, torch::Tensor> CreateHashMap(
-    torch::Tensor input_key, torch::Tensor input_value) {
-  int num_items = input_key.numel();
-  int dir_size = _UpPower(num_items) * 2;
-
-  IdType MAX = std::numeric_limits<IdType>::max();
-  torch::Tensor key_buff_tensor =
-      torch::full({dir_size}, -1, input_key.options());
-  torch::Tensor value_buff_tensor =
-      torch::full({dir_size}, MAX, input_value.options());
-
-  // insert
-  using it = thrust::counting_iterator<IdType>;
-  thrust::for_each(it(0), it(num_items),
-                   [in_key = input_key.data_ptr<IdType>(),
-                    in_value = input_value.data_ptr<IdType>(),
-                    key_buff = key_buff_tensor.data_ptr<IdType>(),
-                    value_buff = value_buff_tensor.data_ptr<IdType>(),
-                    dir_size] __device__(int i) mutable {
-                     Hashmap<IdType> table(key_buff, value_buff, dir_size);
-                     table.Update(in_key[i], in_value[i]);
-                   });
-
-  return std::make_tuple(key_buff_tensor, value_buff_tensor);
-}
-
 std::tuple<torch::Tensor, torch::Tensor> CreateHashMapTensor(
     torch::Tensor input_key, torch::Tensor input_value) {
   CHECK_CUDA(input_key);
   CHECK_CUDA(input_value);
-  DGS_ID_TYPE_SWITCH(input_key.dtype(), IdType,
-                     { return CreateHashMap<IdType>(input_key, input_value); });
+  DGS_ID_TYPE_SWITCH(input_key.dtype(), IdType, {
+    int num_items = input_key.numel();
+    int dir_size = _UpPower(num_items) * 2;
+
+    IdType MAX = std::numeric_limits<IdType>::max();
+    torch::Tensor key_buff_tensor =
+        torch::full({dir_size}, -1, input_key.options());
+    torch::Tensor value_buff_tensor =
+        torch::full({dir_size}, MAX, input_value.options());
+
+    // insert
+    using it = thrust::counting_iterator<IdType>;
+    thrust::for_each(it(0), it(num_items),
+                     [in_key = input_key.data_ptr<IdType>(),
+                      in_value = input_value.data_ptr<IdType>(),
+                      key_buff = key_buff_tensor.data_ptr<IdType>(),
+                      value_buff = value_buff_tensor.data_ptr<IdType>(),
+                      dir_size] __device__(int i) mutable {
+                       Hashmap<IdType> table(key_buff, value_buff, dir_size);
+                       table.Update(in_key[i], in_value[i]);
+                     });
+
+    return std::make_tuple(key_buff_tensor, value_buff_tensor);
+  });
 
   return std::make_tuple(torch::Tensor(), torch::Tensor());
 }
@@ -157,25 +152,36 @@ __global__ void _FetchDataKernel(
   }
 }
 
-template <typename IdType, typename FloatType>
-torch::Tensor FetchDataCUDA(torch::Tensor cpu_data, torch::Tensor gpu_data,
-                            torch::Tensor nid, torch::Tensor hashed_key_tensor,
-                            torch::Tensor hashed_value_tensor) {
-  int num_items = nid.numel();
-  int dim = gpu_data.size(1);
-  int dir_size = hashed_key_tensor.numel();
-  torch::Tensor data_buff = torch::empty({num_items, dim}, gpu_data.options());
+template <typename IdType, typename FloatType, int TILE_SIZE>
+__global__ void _FetchDataWithChunkTensorKernel(
+    const int64_t num_nids, const int64_t dir_size, const int64_t data_dim,
+    const IdType *const in_nids, const FloatType *const cpu_data,
+    chunk_tensor_wrapper<FloatType> *gpu_data, IdType *const hashed_key,
+    IdType *const hashed_value, FloatType *const out_data) {
+  assert(blockDim.x == BLOCK_SIZE);
 
-  constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
-  const dim3 block(BLOCK_SIZE);
-  const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
-  _FetchDataKernel<IdType, FloatType, TILE_SIZE><<<grid, block>>>(
-      num_items, dir_size, dim, nid.data_ptr<IdType>(),
-      cpu_data.data_ptr<FloatType>(), gpu_data.data_ptr<FloatType>(),
-      hashed_key_tensor.data_ptr<IdType>(),
-      hashed_value_tensor.data_ptr<IdType>(), data_buff.data_ptr<FloatType>());
+  int64_t out_node = blockIdx.x * TILE_SIZE;
+  const int64_t last_node =
+      min(static_cast<int64_t>(blockIdx.x + 1) * TILE_SIZE, num_nids);
+  Hashmap<IdType> table(hashed_key, hashed_value, dir_size);
 
-  return data_buff;
+  while (out_node < last_node) {
+    const int64_t pos = table.SearchForPos(in_nids[out_node]);
+
+    if (pos != -1) {
+      for (int idx = threadIdx.x; idx < data_dim; idx += BLOCK_SIZE) {
+        out_data[out_node * data_dim + idx] =
+            gpu_data->At(hashed_value[pos] * data_dim + idx);
+      }
+    } else {
+      for (int idx = threadIdx.x; idx < data_dim; idx += BLOCK_SIZE) {
+        out_data[out_node * data_dim + idx] =
+            cpu_data[in_nids[out_node] * data_dim + idx];
+      }
+    }
+
+    out_node += 1;
+  }
 }
 
 torch::Tensor FetchData(torch::Tensor cpu_data, torch::Tensor gpu_data,
@@ -187,8 +193,60 @@ torch::Tensor FetchData(torch::Tensor cpu_data, torch::Tensor gpu_data,
   CHECK_CUDA(hashed_value_tensor);
   DGS_ID_TYPE_SWITCH(nid.dtype(), IdType, {
     DGS_VALUE_TYPE_SWITCH(gpu_data.dtype(), FloatType, {
-      return FetchDataCUDA<IdType, FloatType>(
-          cpu_data, gpu_data, nid, hashed_key_tensor, hashed_value_tensor);
+      int num_items = nid.numel();
+      int dim = gpu_data.size(1);
+      int dir_size = hashed_key_tensor.numel();
+      torch::Tensor data_buff =
+          torch::empty({num_items, dim}, gpu_data.options());
+
+      constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
+      const dim3 block(BLOCK_SIZE);
+      const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
+      _FetchDataKernel<IdType, FloatType, TILE_SIZE><<<grid, block>>>(
+          num_items, dir_size, dim, nid.data_ptr<IdType>(),
+          cpu_data.data_ptr<FloatType>(), gpu_data.data_ptr<FloatType>(),
+          hashed_key_tensor.data_ptr<IdType>(),
+          hashed_value_tensor.data_ptr<IdType>(),
+          data_buff.data_ptr<FloatType>());
+
+      return data_buff;
+    });
+  });
+
+  return torch::Tensor();
+}
+
+torch::Tensor FetchDataWithChunkTensor(torch::Tensor cpu_data,
+                                       c10::intrusive_ptr<ChunkTensor> gpu_data,
+                                       torch::Tensor nid,
+                                       torch::Tensor hashed_key_tensor,
+                                       torch::Tensor hashed_value_tensor) {
+  CHECK_CUDA(nid);
+  CHECK_CUDA(hashed_key_tensor);
+  CHECK_CUDA(hashed_value_tensor);
+  DGS_ID_TYPE_SWITCH(nid.dtype(), IdType, {
+    DGS_VALUE_TYPE_SWITCH(cpu_data.dtype(), FloatType, {
+      int num_items = nid.numel();
+      int dim = cpu_data.size(1);
+      int dir_size = hashed_key_tensor.numel();
+      torch::Tensor data_buff = torch::empty(
+          {num_items, dim},
+          torch::TensorOptions().dtype(cpu_data.dtype()).device(torch::kCUDA));
+      chunk_tensor_wrapper<FloatType> *gpu_data_wrapper_ptr =
+          reinterpret_cast<chunk_tensor_wrapper<FloatType> *>(
+              gpu_data->wrapper_ptr_);
+      constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
+      const dim3 block(BLOCK_SIZE);
+      const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
+      _FetchDataWithChunkTensorKernel<IdType, FloatType, TILE_SIZE>
+          <<<grid, block>>>(num_items, dir_size, dim, nid.data_ptr<IdType>(),
+                            cpu_data.data_ptr<FloatType>(),
+                            gpu_data_wrapper_ptr,
+                            hashed_key_tensor.data_ptr<IdType>(),
+                            hashed_value_tensor.data_ptr<IdType>(),
+                            data_buff.data_ptr<FloatType>());
+
+      return data_buff;
     });
   });
 
