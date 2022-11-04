@@ -75,8 +75,8 @@ class ChunkTensor : public torch::CustomClassHolder {
     // use CUDACachingAllocator, so torch.cuda.max_memory_allocated can read how
     // much memory is allocated for chunk tensor
     size_t each_partion_size_t = partion_device_tensor_size_ * type_size_t_;
-    void *uva_device_ptr =
-        c10::cuda::CUDACachingAllocator::raw_alloc(each_partion_size_t);
+    void *uva_device_ptr = nullptr;
+    CUDA_CALL(cudaMalloc(&uva_device_ptr, each_partion_size_t));
 
     CUDA_CALL(cudaMemset(uva_device_ptr, -1, each_partion_size_t));
     CUDA_CALL(cudaMemcpy(
@@ -175,7 +175,7 @@ class ChunkTensor : public torch::CustomClassHolder {
     nccl::_Barrier();
 
     // free uva_device_ptrs_.
-    c10::cuda::CUDACachingAllocator::raw_delete(uva_device_ptrs_[local_rank]);
+    CUDA_CALL(cudaFree(uva_device_ptrs_[local_rank]));
   }
 
   torch::Dtype type_;
