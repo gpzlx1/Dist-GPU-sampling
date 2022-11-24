@@ -59,6 +59,9 @@ class ChunkTensor : public torch::CustomClassHolder {
     partion_device_tensor_size_ = capacity_per_gpu / type_size_t_;
     threshold_ = partion_device_tensor_size_ * num_partitions_;
     uva_device_ptrs_.resize(num_partitions_);
+    for (int i = 0; i < num_partitions_; i++) {
+      uva_device_ptrs_[i] = nullptr;
+    }
 
     if (threshold_ > total_tensor_size_) {
       threshold_ = total_tensor_size_;
@@ -72,53 +75,56 @@ class ChunkTensor : public torch::CustomClassHolder {
     CUDA_CALL(cudaHostRegister(uva_host_ptr_, total_tensor_size_ * type_size_t_,
                                cudaHostRegisterDefault));
 
-    // Malloc for uva_device_ptr/uva_device_ptrs_
-    // use CUDACachingAllocator, so torch.cuda.max_memory_allocated can read how
-    // much memory is allocated for chunk tensor
-    size_t each_partion_size_t = partion_device_tensor_size_ * type_size_t_;
-    void *uva_device_ptr =
-        CUDAContext::cuda_context.raw_alloc(each_partion_size_t);
+    if (partion_device_tensor_size_ > 0) {
+      // Malloc for uva_device_ptr/uva_device_ptrs_
+      // use CUDACachingAllocator, so torch.cuda.max_memory_allocated can read
+      // how much memory is allocated for chunk tensor
+      size_t each_partion_size_t = partion_device_tensor_size_ * type_size_t_;
+      void *uva_device_ptr =
+          CUDAContext::cuda_context.raw_alloc(each_partion_size_t);
 
-    CUDA_CALL(cudaMemset(uva_device_ptr, -1, each_partion_size_t));
-    CUDA_CALL(cudaMemcpy(
-        uva_device_ptr,
-        reinterpret_cast<char *>(utils::_getTensorVoidDataPtr(data)) +
-            local_rank * each_partion_size_t,
-        MIN(each_partion_size_t, total_tensor_size_ * type_size_t_ -
-                                     local_rank * each_partion_size_t),
-        cudaMemcpyHostToDevice));
-    uva_device_ptrs_[local_rank] = uva_device_ptr;
+      CUDA_CALL(cudaMemset(uva_device_ptr, -1, each_partion_size_t));
+      CUDA_CALL(cudaMemcpy(
+          uva_device_ptr,
+          reinterpret_cast<char *>(utils::_getTensorVoidDataPtr(data)) +
+              local_rank * each_partion_size_t,
+          MIN(each_partion_size_t, total_tensor_size_ * type_size_t_ -
+                                       local_rank * each_partion_size_t),
+          cudaMemcpyHostToDevice));
+      uva_device_ptrs_[local_rank] = uva_device_ptr;
 
-    // Context IPC for uva_device_ptrs_
-    if (num_partitions_ > 1) {
-      cudaIpcMemHandle_t ipc_device_mem_handle;
-      cudaIpcMemHandle_t ipc_device_mem_handle_recvbuff[num_partitions_];
+      // Context IPC for uva_device_ptrs_
+      if (num_partitions_ > 1) {
+        cudaIpcMemHandle_t ipc_device_mem_handle;
+        cudaIpcMemHandle_t ipc_device_mem_handle_recvbuff[num_partitions_];
 
-      CUDA_CALL(cudaIpcGetMemHandle(&ipc_device_mem_handle, uva_device_ptr));
-      CUDA_CALL(cudaHostRegister(&ipc_device_mem_handle,
-                                 sizeof(cudaIpcMemHandle_t),
-                                 cudaHostRegisterDefault));
-      CUDA_CALL(cudaHostRegister(ipc_device_mem_handle_recvbuff,
-                                 sizeof(cudaIpcMemHandle_t) * num_partitions_,
-                                 cudaHostRegisterDefault));
-      NCCL_CALL(ncclAllGather(&ipc_device_mem_handle,
-                              ipc_device_mem_handle_recvbuff,
-                              sizeof(cudaIpcMemHandle_t), ncclChar,
-                              nccl::global_comm, nccl::nccl_stream));
-      nccl::_Barrier();
-      CUDA_CALL(cudaHostUnregister(&ipc_device_mem_handle));
-      CUDA_CALL(cudaHostUnregister(ipc_device_mem_handle_recvbuff));
+        CUDA_CALL(cudaIpcGetMemHandle(&ipc_device_mem_handle, uva_device_ptr));
+        CUDA_CALL(cudaHostRegister(&ipc_device_mem_handle,
+                                   sizeof(cudaIpcMemHandle_t),
+                                   cudaHostRegisterDefault));
+        CUDA_CALL(cudaHostRegister(ipc_device_mem_handle_recvbuff,
+                                   sizeof(cudaIpcMemHandle_t) * num_partitions_,
+                                   cudaHostRegisterDefault));
+        NCCL_CALL(ncclAllGather(&ipc_device_mem_handle,
+                                ipc_device_mem_handle_recvbuff,
+                                sizeof(cudaIpcMemHandle_t), ncclChar,
+                                nccl::global_comm, nccl::nccl_stream));
+        nccl::_Barrier();
+        CUDA_CALL(cudaHostUnregister(&ipc_device_mem_handle));
+        CUDA_CALL(cudaHostUnregister(ipc_device_mem_handle_recvbuff));
 
-      // after communication, setup uva_device_ptrs_;
-      for (int i = 0; i < int(uva_device_ptrs_.size()); i++) {
-        if (i != local_rank) {
-          CUDA_CALL(cudaIpcOpenMemHandle(&uva_device_ptrs_[i],
-                                         ipc_device_mem_handle_recvbuff[i],
-                                         cudaIpcMemLazyEnablePeerAccess));
+        // after communication, setup uva_device_ptrs_;
+        for (int i = 0; i < int(uva_device_ptrs_.size()); i++) {
+          if (i != local_rank) {
+            CUDA_CALL(cudaIpcOpenMemHandle(&uva_device_ptrs_[i],
+                                           ipc_device_mem_handle_recvbuff[i],
+                                           cudaIpcMemLazyEnablePeerAccess));
+          }
         }
       }
     }
 
+    // create wrapper
     uva_device_ptrs_data_ = reinterpret_cast<void **>(
         CUDAContext::cuda_context.raw_alloc(sizeof(void *) * num_partitions_));
     CUDA_CALL(cudaMemcpy(uva_device_ptrs_data_,
@@ -169,11 +175,13 @@ class ChunkTensor : public torch::CustomClassHolder {
     CUDA_CALL(cudaHostUnregister(uva_host_ptr_));
     host_tensor_ = torch::Tensor();
 
-    for (int i = 0; i < num_partitions_; i++) {
-      if (local_rank != i)
-        CUDA_CALL(cudaIpcCloseMemHandle(uva_device_ptrs_[i]);)
+    if (num_partitions_ > 1 && partion_device_tensor_size_ > 0) {
+      for (int i = 0; i < num_partitions_; i++) {
+        if (local_rank != i)
+          CUDA_CALL(cudaIpcCloseMemHandle(uva_device_ptrs_[i]);)
+      }
+      nccl::_Barrier();
     }
-    nccl::_Barrier();
 
     // free uva_device_ptrs_.
     CUDAContext::cuda_context.raw_delete(uva_device_ptrs_[local_rank]);
