@@ -13,7 +13,8 @@ TORCH_LIBRARY(dgs_classes, m) {
       .def(torch::init<torch::Tensor, int64_t>())
       .def("_CAPI_get_host_tensor", &ChunkTensor::GetHostTensor)
       .def("_CAPI_get_sub_device_tensor", &ChunkTensor::GetSubDeviceTensor)
-      .def("_CAPI_index", &ChunkTensor::Index);
+      .def("_CAPI_index", &ChunkTensor::Index)
+      .def("_CAPI_split_index", &ChunkTensor::SplitIndex);
 }
 
 TORCH_LIBRARY(dgs_ops, m) {

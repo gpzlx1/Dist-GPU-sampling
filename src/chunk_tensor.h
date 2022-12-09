@@ -154,6 +154,8 @@ class ChunkTensor : public torch::CustomClassHolder {
   }
 
   torch::Tensor Index(torch::Tensor index);
+  std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> SplitIndex(
+      torch::Tensor index);
 
   void _CreateWrapperPtr() {
     DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
