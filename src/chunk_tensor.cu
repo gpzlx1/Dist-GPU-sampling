@@ -1,3 +1,5 @@
+#include <chrono>
+
 #include "chunk_tensor.h"
 #include "cuda_common.h"
 
@@ -231,6 +233,33 @@ torch::Tensor ChunkTensor::HostIndex(torch::Tensor index) {
   });
 
   return torch::Tensor();
+}
+
+double ChunkTensor::MeasureIndexTime(torch::Tensor nids, std::string option) {
+  std::chrono::system_clock::time_point start, end;
+  if (option == "local") {
+    start = std::chrono::system_clock::now();
+    auto fetched = LocalIndex(nids);
+    CUDA_CALL(cudaDeviceSynchronize());
+    end = std::chrono::system_clock::now();
+  } else if (option == "remote") {
+    start = std::chrono::system_clock::now();
+    auto fetched = RemoteIndex(nids);
+    CUDA_CALL(cudaDeviceSynchronize());
+    end = std::chrono::system_clock::now();
+  } else if (option == "host") {
+    start = std::chrono::system_clock::now();
+    auto fetched = HostIndex(nids);
+    CUDA_CALL(cudaDeviceSynchronize());
+    end = std::chrono::system_clock::now();
+  } else {
+    return -1;
+  }
+  double time =
+      double(std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+                 .count()) /
+      1000;
+  return time;
 }
 
 }  // namespace dgs

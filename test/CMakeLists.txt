@@ -1,2 +1,0 @@
-add_executable(compute_loading_factor compute_loading_factor.cu)
-target_link_libraries(compute_loading_factor PRIVATE dgs)

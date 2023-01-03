@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15.0)
 project(DGS LANGUAGES CUDA CXX)
 
 # set include
-include_directories("include" "src")
+include_directories("include")
 
 
 # find torch
@@ -44,6 +44,3 @@ target_compile_features(dgs PRIVATE cxx_std_14)
 
 # Link against LibTorch
 target_link_libraries(dgs ${DGS_EXTERNAL_LIB})
-
-# subdirectories
-add_subdirectory(test)
