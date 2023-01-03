@@ -30,14 +30,25 @@ def compute_loading_factor(rank, world_size, valid_time_threshold, bandwidth,
 
     while valid_count < 15:
         features = torch.ones((world_size * feature_size, feature_dim)).float()
-        nids = torch.randint(rank * feature_size, (rank + 1) * feature_size,
-                             (nids_size, )).unique().long().cuda()
-        if option == 'local' or option == 'remote':
+        if option == 'local':
             chunk_features = torch.classes.dgs_classes.ChunkTensor(
                 features,
                 features.numel() * features.element_size())
+            nids = torch.randint(rank * feature_size,
+                                 (rank + 1) * feature_size,
+                                 (nids_size, )).unique().long().cuda()
         elif option == 'host':
             chunk_features = torch.classes.dgs_classes.ChunkTensor(features, 0)
+            nids = torch.randint(0, world_size * feature_size,
+                                 (nids_size, )).unique().long().cuda()
+        elif option == 'remote':
+            chunk_features = torch.classes.dgs_classes.ChunkTensor(
+                features,
+                features.numel() * features.element_size())
+            total_nids = torch.randint(
+                0, world_size * feature_size,
+                (world_size * nids_size, )).unique().long().cuda()
+            _, nids, _ = chunk_features._CAPI_split_index(total_nids)
 
         fact_time = chunk_features._CAPI_measure_index_time(nids, option)
 
