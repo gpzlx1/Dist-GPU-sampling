@@ -73,7 +73,7 @@ def compute_loading_factor(rank, world_size, features, valid_time_threshold,
                 torch.cuda.synchronize()
                 fact_time_log.append(time.time() - start)
 
-        fact_time = numpy.mean(fact_time_log[3:])
+        fact_time = numpy.mean(fact_time_log[3:]) * 1000
 
         if fact_time > valid_time_threshold:
             infer_time = nids.numel() * feature_dim * features.element_size(
@@ -82,7 +82,7 @@ def compute_loading_factor(rank, world_size, features, valid_time_threshold,
             valid_count += 1
             print("rank {}, valid {}, infer time = {:.2f}, fact_time = {:.2f}".
                   format(rank, valid_count, infer_time, fact_time))
-            nids_size *= 1.2
+            nids_size = int(nids_size * 1.2)
 
         else:
             nids_size *= 10
