@@ -17,8 +17,7 @@ TORCH_LIBRARY(dgs_classes, m) {
       .def("_CAPI_split_index", &ChunkTensor::SplitIndex)
       .def("_CAPI_local_index", &ChunkTensor::LocalIndex)
       .def("_CAPI_remote_index", &ChunkTensor::RemoteIndex)
-      .def("_CAPI_host_index", &ChunkTensor::HostIndex)
-      .def("_CAPI_measure_index_time", &ChunkTensor::MeasureIndexTime);
+      .def("_CAPI_host_index", &ChunkTensor::HostIndex);
 }
 
 TORCH_LIBRARY(dgs_ops, m) {
