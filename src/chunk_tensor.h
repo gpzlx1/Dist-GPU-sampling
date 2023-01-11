@@ -16,16 +16,18 @@ struct chunk_tensor_wrapper {
   int64_t threshold_;
   int64_t num_partitions_;
   int64_t each_partion_size_;
+  int64_t local_rank_;
   void *on_host_data_ptr_;
   void **on_device_data_ptrs_;
 
   __host__ chunk_tensor_wrapper(int64_t threshold, int64_t num_partitions,
-                                int64_t each_partion_size,
+                                int64_t each_partion_size, int64_t local_rank,
                                 void *on_host_data_ptr,
                                 void **uva_device_ptrs_data) {
     threshold_ = threshold;
     num_partitions_ = num_partitions;
     each_partion_size_ = each_partion_size;
+    local_rank_ = local_rank;
     on_host_data_ptr_ = on_host_data_ptr;
     on_device_data_ptrs_ = uva_device_ptrs_data;
   }
@@ -42,6 +44,23 @@ struct chunk_tensor_wrapper {
                                                            partition_idx];
     }
   }
+
+  __device__ inline ValueType LocalAt(int64_t index) {
+    return reinterpret_cast<ValueType *>(
+        on_device_data_ptrs_[local_rank_])[index -
+                                           each_partion_size_ * local_rank_];
+  }
+
+  __device__ inline ValueType RemoteAt(int64_t index) {
+    int partition_idx = index / each_partion_size_;
+    return reinterpret_cast<ValueType *>(
+        on_device_data_ptrs_[partition_idx])[index - each_partion_size_ *
+                                                         partition_idx];
+  }
+
+  __device__ inline ValueType HostAt(int64_t index) {
+    return reinterpret_cast<ValueType *>(on_host_data_ptr_)[index];
+  }
 };
 
 class ChunkTensor : public torch::CustomClassHolder {
@@ -49,7 +68,7 @@ class ChunkTensor : public torch::CustomClassHolder {
   ChunkTensor(torch::Tensor data, int64_t capacity_per_gpu) {
     CHECK(data.dim() == 1 or data.dim() == 2);
     CHECK_CPU(data);
-    int64_t local_rank = nccl::local_rank;
+    local_rank_ = nccl::local_rank;
     num_partitions_ = nccl::world_size;
 
     total_tensor_size_ = data.numel();
@@ -87,11 +106,11 @@ class ChunkTensor : public torch::CustomClassHolder {
       CUDA_CALL(cudaMemcpy(
           uva_device_ptr,
           reinterpret_cast<char *>(utils::_getTensorVoidDataPtr(data)) +
-              local_rank * each_partion_size_t,
+              local_rank_ * each_partion_size_t,
           MIN(each_partion_size_t, total_tensor_size_ * type_size_t_ -
-                                       local_rank * each_partion_size_t),
+                                       local_rank_ * each_partion_size_t),
           cudaMemcpyHostToDevice));
-      uva_device_ptrs_[local_rank] = uva_device_ptr;
+      uva_device_ptrs_[local_rank_] = uva_device_ptr;
 
       // Context IPC for uva_device_ptrs_
       if (num_partitions_ > 1) {
@@ -115,7 +134,7 @@ class ChunkTensor : public torch::CustomClassHolder {
 
         // after communication, setup uva_device_ptrs_;
         for (int i = 0; i < int(uva_device_ptrs_.size()); i++) {
-          if (i != local_rank) {
+          if (i != local_rank_) {
             CUDA_CALL(cudaIpcOpenMemHandle(&uva_device_ptrs_[i],
                                            ipc_device_mem_handle_recvbuff[i],
                                            cudaIpcMemLazyEnablePeerAccess));
@@ -149,16 +168,21 @@ class ChunkTensor : public torch::CustomClassHolder {
 
   torch::Tensor GetSubDeviceTensor() {
     return torch::from_blob(
-        uva_device_ptrs_[nccl::local_rank], partion_device_tensor_size_,
+        uva_device_ptrs_[local_rank_], partion_device_tensor_size_,
         torch::TensorOptions().dtype(type_).device(torch::kCUDA));
   }
 
   torch::Tensor Index(torch::Tensor index);
+  torch::Tensor LocalIndex(torch::Tensor index);
+  torch::Tensor RemoteIndex(torch::Tensor index);
+  torch::Tensor HostIndex(torch::Tensor index);
+  std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> SplitIndex(
+      torch::Tensor index);
 
   void _CreateWrapperPtr() {
     DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
       chunk_tensor_wrapper<ValueType> wrapper(
-          threshold_, num_partitions_, partion_device_tensor_size_,
+          threshold_, num_partitions_, partion_device_tensor_size_, local_rank_,
           uva_host_ptr_, uva_device_ptrs_data_);
       wrapper_ptr_ = CUDAContext::cuda_context.raw_alloc(
           sizeof(chunk_tensor_wrapper<ValueType>));
@@ -171,20 +195,19 @@ class ChunkTensor : public torch::CustomClassHolder {
     CUDAContext::cuda_context.raw_delete(uva_device_ptrs_data_);
     CUDAContext::cuda_context.raw_delete(wrapper_ptr_);
 
-    int local_rank = nccl::local_rank;
     CUDA_CALL(cudaHostUnregister(uva_host_ptr_));
     host_tensor_ = torch::Tensor();
 
     if (num_partitions_ > 1 && partion_device_tensor_size_ > 0) {
       for (int i = 0; i < num_partitions_; i++) {
-        if (local_rank != i)
+        if (local_rank_ != i)
           CUDA_CALL(cudaIpcCloseMemHandle(uva_device_ptrs_[i]);)
       }
       nccl::_Barrier();
     }
 
     // free uva_device_ptrs_.
-    CUDAContext::cuda_context.raw_delete(uva_device_ptrs_[local_rank]);
+    CUDAContext::cuda_context.raw_delete(uva_device_ptrs_[local_rank_]);
   }
 
   torch::Dtype type_;
@@ -197,6 +220,8 @@ class ChunkTensor : public torch::CustomClassHolder {
 
   int64_t threshold_;
   int64_t num_partitions_;
+
+  int64_t local_rank_;
 
   void *uva_host_ptr_ = nullptr;
   void **uva_device_ptrs_data_ = nullptr;
