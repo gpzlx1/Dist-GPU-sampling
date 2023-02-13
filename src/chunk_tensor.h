@@ -1,17 +1,9 @@
 #ifndef DGS_CHUNK_TENSOR_H_
 #define DGS_CHUNK_TENSOR_H_
 
-#include <c10/cuda/CUDACachingAllocator.h>
 #include <torch/script.h>
 
-#include <sys/ipc.h>
-#include <sys/shm.h>
-
-#include "./common.h"
-#include "./cuda_common.h"
-#include "./utils.h"
-#include "cuda_context.h"
-#include "nccl_context.h"
+#include "cuda_common.h"
 
 namespace dgs {
 

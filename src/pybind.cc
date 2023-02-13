@@ -1,8 +1,8 @@
 #include <torch/custom_class.h>
 #include <torch/script.h>
 
-#include "./chunk_tensor.h"
-#include "./dgs_ops.h"
+#include "chunk_tensor.h"
+#include "dgs_ops.h"
 #include "cuda_context.h"
 #include "nccl_context.h"
 

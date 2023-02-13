@@ -1,5 +1,6 @@
 #include "chunk_tensor.h"
 #include "cuda_common.h"
+#include "dgs_headers.h"
 #include "dgs_ops.h"
 
 #define BLOCK_SIZE 128
@@ -76,8 +77,8 @@ __global__ void _GetSplitIndexMaskKernel(
   }
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> SplitIndexFromChunkTensor(
-    ChunkTensor* c_tensor, torch::Tensor index) {
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+SplitIndexFromChunkTensor(ChunkTensor* c_tensor, torch::Tensor index) {
   CHECK_CUDA(index);
   DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
     int num_items = index.numel();

@@ -2,21 +2,6 @@
 #define DGS_NCCL_CONTEXT_H_
 
 #include <nccl.h>
-#include <torch/script.h>
-#include "cuda_common.h"
-
-#define AlignUp(X, ALIGN_SIZE) (((X) + (ALIGN_SIZE)-1) / (ALIGN_SIZE))
-
-#define NCCL_CALL(X)                                                           \
-  do {                                                                         \
-    auto result = X;                                                           \
-    if (result != ncclSuccess) {                                               \
-      const char* p_err_str = ncclGetErrorString(result);                      \
-      fprintf(stderr, "File %s Line %d %s returned %s.\n", __FILE__, __LINE__, \
-              #X, p_err_str);                                                  \
-      abort();                                                                 \
-    }                                                                          \
-  } while (0)
 
 namespace dgs {
 namespace nccl {

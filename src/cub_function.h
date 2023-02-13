@@ -3,10 +3,8 @@
 
 #include <c10/cuda/CUDACachingAllocator.h>
 #include <cub/cub.cuh>
-#include "./cuda_common.h"
 
 namespace dgs {
-
 
 template <typename IdType>
 inline void cub_exclusiveSum(IdType* arrays, const IdType array_length) {

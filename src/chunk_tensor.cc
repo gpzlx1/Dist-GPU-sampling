@@ -1,5 +1,11 @@
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
 #include "chunk_tensor.h"
+#include "cuda_context.h"
 #include "dgs_ops.h"
+#include "nccl_context.h"
+#include "utils.h"
 
 namespace dgs {
 

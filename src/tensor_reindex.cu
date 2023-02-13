@@ -3,8 +3,8 @@
 #include "atomic.h"
 #include "cub_function.h"
 #include "cuda_common.h"
+#include "dgs_headers.h"
 #include "dgs_ops.h"
-#include "utils.h"
 
 namespace dgs {
 template <typename IdType>

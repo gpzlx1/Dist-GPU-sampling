@@ -1,6 +1,7 @@
 #include <torch/script.h>
 #include "atomic.h"
 #include "cuda_common.h"
+#include "dgs_headers.h"
 #include "dgs_ops.h"
 
 #define BLOCK_SIZE 128

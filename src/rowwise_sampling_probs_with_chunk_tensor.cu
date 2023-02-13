@@ -4,6 +4,7 @@
 #include "chunk_tensor.h"
 #include "cub_function.h"
 #include "cuda_common.h"
+#include "dgs_headers.h"
 #include "dgs_ops.h"
 #include "warpselect/WarpSelect.cuh"
 

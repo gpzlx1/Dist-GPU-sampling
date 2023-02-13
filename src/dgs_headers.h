@@ -1,15 +1,34 @@
-#ifndef DGS_COMMON_H_
-#define DGS_COMMON_H_
-
-#include <thrust/device_vector.h>
-#include <thrust/host_vector.h>
-#include <vector>
+#ifndef DGS_DGS_HEADERS_H_
+#define DGS_DGS_HEADERS_H_
 
 #define CHECK_CPU(x) \
   TORCH_CHECK(!x.device().is_cuda(), #x " must be a CPU tensor")
-
 #define CHECK_CUDA(x) \
   TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+#define AlignUp(X, ALIGN_SIZE) (((X) + (ALIGN_SIZE)-1) / (ALIGN_SIZE))
+#define MIN(x, y) ((x < y) ? x : y)
+
+#define NCCL_CALL(X)                                                           \
+  do {                                                                         \
+    auto result = X;                                                           \
+    if (result != ncclSuccess) {                                               \
+      const char* p_err_str = ncclGetErrorString(result);                      \
+      fprintf(stderr, "File %s Line %d %s returned %s.\n", __FILE__, __LINE__, \
+              #X, p_err_str);                                                  \
+      abort();                                                                 \
+    }                                                                          \
+  } while (0)
+
+#define SHM_CHECK(err)                                          \
+  {                                                             \
+    if (err == -1) {                                            \
+      fprintf(stderr,                                           \
+              "%s:%d ERROR: SHM call failed "                   \
+              "with "                                           \
+              "%s (%d).\n",                                     \
+              __FILE__, __LINE__, std::strerror(errno), errno); \
+    }                                                           \
+  }
 
 #define CUDA_CALL(call)                                                  \
   {                                                                      \
@@ -23,17 +42,6 @@
               cudaStatus);                                               \
       exit(cudaStatus);                                                  \
     }                                                                    \
-  }
-
-#define SHM_CHECK(err)                                          \
-  {                                                             \
-    if (err == -1) {                                            \
-      fprintf(stderr,                                           \
-              "%s:%d ERROR: SHM call failed "                   \
-              "with "                                           \
-              "%s (%d).\n",                                     \
-              __FILE__, __LINE__, std::strerror(errno), errno); \
-    }                                                           \
   }
 
 #define DGS_ID_TYPE_SWITCH(val, IdType, ...)         \
@@ -64,7 +72,5 @@
       LOG(FATAL) << "Value can only be int32 or int64 or float32"; \
     }                                                              \
   } while (0);
-
-#define MIN(x, y) ((x < y) ? x : y)
 
 #endif

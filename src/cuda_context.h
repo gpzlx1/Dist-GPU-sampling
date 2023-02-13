@@ -3,6 +3,7 @@
 
 #include <unordered_map>
 #include "cuda_common.h"
+#include "dgs_headers.h"
 
 namespace dgs {
 namespace CUDAContext {

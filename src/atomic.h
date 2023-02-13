@@ -1,7 +1,7 @@
 #ifndef DGS_ATOMIC_H_
 #define DGS_ATOMIC_H_
 
-#include "./cuda_common.h"
+#include "cuda_common.h"
 
 namespace dgs {
 namespace atomic {
