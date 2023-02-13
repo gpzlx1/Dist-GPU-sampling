@@ -54,10 +54,12 @@ template <typename IdType, typename FloatType, int TILE_SIZE, int BLOCK_WARPS,
           int WARP_SIZE, int NumWarpQ, int NumThreadQ>
 __global__ void _CSRRowWiseSampleKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, const IdType *const in_ptr,
-    const IdType *const in_cols, const FloatType *const prob,
-    const IdType *const out_ptr, IdType *const out_rows,
-    IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    const IdType *__restrict__ const in_ptr,
+    const IdType *__restrict__ const in_cols,
+    const FloatType *__restrict__ const prob,
+    const IdType *__restrict__ const out_ptr,
+    IdType *__restrict__ const out_rows, IdType *const out_cols) {
   // we assign one warp per row
   assert(num_picks <= 32);
   assert(blockDim.x == WARP_SIZE);
@@ -138,10 +140,13 @@ template <typename IdType, typename FloatType, int TILE_SIZE, int BLOCK_WARPS,
           int WARP_SIZE>
 __global__ void _CSRRowWiseSampleReplaceKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, const IdType *const in_ptr,
-    const IdType *const in_cols, const FloatType *const prob,
-    const IdType *const out_ptr, const IdType *const cdf_ptr,
-    FloatType *const cdf, IdType *const out_rows, IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    const IdType *__restrict__ const in_ptr,
+    const IdType *__restrict__ const in_cols,
+    const FloatType *__restrict__ const prob,
+    const IdType *__restrict__ const out_ptr,
+    const IdType *__restrict__ const cdf_ptr, FloatType *__restrict__ const cdf,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == WARP_SIZE);
   assert(blockDim.y == BLOCK_WARPS);

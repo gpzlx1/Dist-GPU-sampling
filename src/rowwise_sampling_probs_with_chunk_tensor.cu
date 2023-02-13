@@ -1,6 +1,7 @@
 #include <curand_kernel.h>
 #include <torch/script.h>
 
+#include "chunk_tensor.h"
 #include "cub_function.h"
 #include "cuda_common.h"
 #include "dgs_ops.h"
@@ -13,10 +14,13 @@ template <typename IdType, typename FloatType, int TILE_SIZE, int BLOCK_WARPS,
           int WARP_SIZE, int NumWarpQ, int NumThreadQ>
 __global__ void _CSRRowWiseSampleKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
-    chunk_tensor_wrapper<FloatType> *prob, const IdType *const out_ptr,
-    const IdType *const row_begin, const IdType *const row_end,
-    IdType *const out_rows, IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    chunk_tensor_wrapper<IdType> *__restrict__ in_index,
+    chunk_tensor_wrapper<FloatType> *__restrict__ prob,
+    const IdType *__restrict__ const out_ptr,
+    const IdType *__restrict__ const row_begin,
+    const IdType *__restrict__ const row_end,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(num_picks <= 32);
   assert(blockDim.x == WARP_SIZE);
@@ -97,11 +101,14 @@ template <typename IdType, typename FloatType, int TILE_SIZE, int BLOCK_WARPS,
           int WARP_SIZE>
 __global__ void _CSRRowWiseSampleReplaceKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
-    chunk_tensor_wrapper<FloatType> *prob, const IdType *const out_ptr,
-    const IdType *const row_begin, const IdType *const row_end,
-    const IdType *const cdf_ptr, FloatType *const cdf, IdType *const out_rows,
-    IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    chunk_tensor_wrapper<IdType> *__restrict__ in_index,
+    chunk_tensor_wrapper<FloatType> *__restrict__ prob,
+    const IdType *__restrict__ const out_ptr,
+    const IdType *__restrict__ const row_begin,
+    const IdType *__restrict__ const row_end,
+    const IdType *__restrict__ const cdf_ptr, FloatType *__restrict__ const cdf,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == WARP_SIZE);
   assert(blockDim.y == BLOCK_WARPS);
@@ -175,11 +182,14 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingProbWithChunkTensorCUDA(
     c10::intrusive_ptr<ChunkTensor> indices,
     c10::intrusive_ptr<ChunkTensor> probs, int64_t num_picks, bool replace) {
   chunk_tensor_wrapper<IdType> *d_indptr_wrapper_ptr =
-      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(indptr->wrapper_chunktensor_ptr_);
+      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(
+          indptr->wrapper_chunktensor_ptr_);
   chunk_tensor_wrapper<IdType> *d_indices_wrapper_ptr =
-      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(indices->wrapper_chunktensor_ptr_);
+      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(
+          indices->wrapper_chunktensor_ptr_);
   chunk_tensor_wrapper<FloatType> *f_probs_wrapper_ptr =
-      reinterpret_cast<chunk_tensor_wrapper<FloatType> *>(probs->wrapper_chunktensor_ptr_);
+      reinterpret_cast<chunk_tensor_wrapper<FloatType> *>(
+          probs->wrapper_chunktensor_ptr_);
 
   int num_items = seeds.numel();
   torch::Tensor row_begin_tensor = torch::empty(

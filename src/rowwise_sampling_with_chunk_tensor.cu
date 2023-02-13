@@ -13,10 +13,12 @@ namespace dgs {
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
-    const IdType *const out_ptr, const IdType *const row_begin,
-    const IdType *const row_end, IdType *const out_rows,
-    IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    chunk_tensor_wrapper<IdType> *__restrict__ in_index,
+    const IdType *__restrict__ const out_ptr,
+    const IdType *__restrict__ const row_begin,
+    const IdType *__restrict__ const row_end,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -71,10 +73,12 @@ __global__ void _CSRRowWiseSampleUniformKernel(
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformReplaceKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
-    const IdType *const out_ptr, const IdType *const row_begin,
-    const IdType *const row_end, IdType *const out_rows,
-    IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    chunk_tensor_wrapper<IdType> *__restrict__ in_index,
+    const IdType *__restrict__ const out_ptr,
+    const IdType *__restrict__ const row_begin,
+    const IdType *__restrict__ const row_end,
+    IdType *__restrict__ const out_rows, IdType *const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -111,9 +115,11 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
     c10::intrusive_ptr<ChunkTensor> indices, int64_t num_picks, bool replace) {
   CHECK_CUDA(seeds);
   chunk_tensor_wrapper<IdType> *d_indptr_wrapper_ptr =
-      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(indptr->wrapper_chunktensor_ptr_);
+      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(
+          indptr->wrapper_chunktensor_ptr_);
   chunk_tensor_wrapper<IdType> *d_indices_wrapper_ptr =
-      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(indices->wrapper_chunktensor_ptr_);
+      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(
+          indices->wrapper_chunktensor_ptr_);
 
   int num_items = seeds.numel();
   torch::Tensor row_begin_tensor = torch::empty(

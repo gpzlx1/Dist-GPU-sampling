@@ -9,7 +9,8 @@
 namespace dgs {
 template <typename IdType>
 struct RelabelHashmap {
-  __device__ inline RelabelHashmap(IdType* Kptr, IdType* Vptr, size_t numel)
+  __device__ inline RelabelHashmap(IdType* __restrict__ Kptr,
+                                   IdType* __restrict__ Vptr, size_t numel)
       : kptr(Kptr), vptr(Vptr), capacity(numel){};
 
   __device__ inline void Update(IdType key, IdType value) {

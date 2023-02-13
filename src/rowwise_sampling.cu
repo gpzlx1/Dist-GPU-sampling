@@ -41,9 +41,11 @@ inline torch::Tensor _GetSubIndptr(torch::Tensor seeds, torch::Tensor indptr,
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, const IdType *const in_ptr,
-    const IdType *const in_index, const IdType *const out_ptr,
-    IdType *const out_rows, IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    const IdType *__restrict__ const in_ptr,
+    const IdType *__restrict__ const in_index,
+    const IdType *__restrict__ const out_ptr,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -98,9 +100,11 @@ __global__ void _CSRRowWiseSampleUniformKernel(
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformReplaceKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, const IdType *const in_ptr,
-    const IdType *const in_index, const IdType *const out_ptr,
-    IdType *const out_rows, IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    const IdType *__restrict__ const in_ptr,
+    const IdType *__restrict__ const in_index,
+    const IdType *__restrict__ const out_ptr,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 

@@ -7,7 +7,8 @@
 namespace dgs {
 template <typename IdType>
 struct Hashmap {
-  __device__ inline Hashmap(IdType *Kptr, IdType *Vptr, size_t numel)
+  __device__ inline Hashmap(IdType *__restrict__ Kptr,
+                            IdType *__restrict__ Vptr, size_t numel)
       : kptr(Kptr), vptr(Vptr), capacity(numel){};
 
   __device__ inline void Update(IdType key, IdType value) {
@@ -121,11 +122,14 @@ std::tuple<torch::Tensor, torch::Tensor> CreateHashMapTensor(
 }
 
 template <typename IdType, typename FloatType, int TILE_SIZE>
-__global__ void _FetchDataKernel(
-    const int64_t num_nids, const int64_t dir_size, const int64_t data_dim,
-    const IdType *const in_nids, const FloatType *const cpu_data,
-    const FloatType *const gpu_data, IdType *const hashed_key,
-    IdType *const hashed_value, FloatType *const out_data) {
+__global__ void _FetchDataKernel(const int64_t num_nids, const int64_t dir_size,
+                                 const int64_t data_dim,
+                                 const IdType *__restrict__ const in_nids,
+                                 const FloatType *__restrict__ const cpu_data,
+                                 const FloatType *__restrict__ const gpu_data,
+                                 IdType *__restrict__ const hashed_key,
+                                 IdType *__restrict__ const hashed_value,
+                                 FloatType *__restrict__ const out_data) {
   assert(blockDim.x == BLOCK_SIZE);
 
   int64_t out_node = blockIdx.x * TILE_SIZE;
@@ -155,9 +159,12 @@ __global__ void _FetchDataKernel(
 template <typename IdType, typename FloatType, int TILE_SIZE>
 __global__ void _FetchDataWithChunkTensorKernel(
     const int64_t num_nids, const int64_t dir_size, const int64_t data_dim,
-    const IdType *const in_nids, const FloatType *const cpu_data,
-    chunk_tensor_wrapper<FloatType> *gpu_data, IdType *const hashed_key,
-    IdType *const hashed_value, FloatType *const out_data) {
+    const IdType *__restrict__ const in_nids,
+    const FloatType *__restrict__ const cpu_data,
+    chunk_tensor_wrapper<FloatType> *__restrict__ gpu_data,
+    IdType *__restrict__ const hashed_key,
+    IdType *__restrict__ const hashed_value,
+    FloatType *__restrict__ const out_data) {
   assert(blockDim.x == BLOCK_SIZE);
 
   int64_t out_node = blockIdx.x * TILE_SIZE;

@@ -5,10 +5,10 @@
 
 namespace dgs {
 template <typename ValueType, typename IndexType, int TILE_SIZE>
-void __global__ _IndexMemcpyKernel(chunk_tensor_wrapper<ValueType>* data,
-                                   const IndexType* const index,
-                                   const int num_items, const int dim_size,
-                                   ValueType* const output) {
+void __global__ _IndexMemcpyKernel(
+    chunk_tensor_wrapper<ValueType>* __restrict__ data,
+    const IndexType* __restrict__ const index, const int num_items,
+    const int dim_size, ValueType* __restrict__ const output) {
   assert(blockDim.x == BLOCK_SIZE);
 
   int curr_item = blockIdx.x * TILE_SIZE + threadIdx.y;
@@ -53,8 +53,10 @@ template <typename IndexType, int TILE_SIZE>
 __global__ void _GetSplitIndexMaskKernel(
     const int64_t num_items, const int64_t local_rank, const int64_t threshold,
     const int64_t each_partition_size, const int64_t stride,
-    const IndexType* const in_index, bool* const local_index_mask,
-    bool* const remote_index_mask, bool* const host_index_mask) {
+    const IndexType* __restrict__ const in_index,
+    bool* __restrict__ const local_index_mask,
+    bool* __restrict__ const remote_index_mask,
+    bool* __restrict__ const host_index_mask) {
   int64_t idx = blockIdx.x * TILE_SIZE;
   const int64_t last_idx =
       min(static_cast<int64_t>(blockIdx.x + 1) * TILE_SIZE, num_items);
@@ -102,10 +104,10 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> ChunkTensor::SplitIndex(
 }
 
 template <typename ValueType, typename IndexType, int TILE_SIZE>
-void __global__ _LocalIndexMemcpyKernel(chunk_tensor_wrapper<ValueType>* data,
-                                        const IndexType* const index,
-                                        const int num_items, const int dim_size,
-                                        ValueType* const output) {
+void __global__ _LocalIndexMemcpyKernel(
+    chunk_tensor_wrapper<ValueType>* __restrict__ data,
+    const IndexType* __restrict__ const index, const int num_items,
+    const int dim_size, ValueType* __restrict__ const output) {
   assert(blockDim.x == BLOCK_SIZE);
 
   int curr_item = blockIdx.x * TILE_SIZE + threadIdx.y;
@@ -122,11 +124,10 @@ void __global__ _LocalIndexMemcpyKernel(chunk_tensor_wrapper<ValueType>* data,
 }
 
 template <typename ValueType, typename IndexType, int TILE_SIZE>
-void __global__ _RemoteIndexMemcpyKernel(chunk_tensor_wrapper<ValueType>* data,
-                                         const IndexType* const index,
-                                         const int num_items,
-                                         const int dim_size,
-                                         ValueType* const output) {
+void __global__ _RemoteIndexMemcpyKernel(
+    chunk_tensor_wrapper<ValueType>* __restrict__ data,
+    const IndexType* __restrict__ const index, const int num_items,
+    const int dim_size, ValueType* __restrict__ const output) {
   assert(blockDim.x == BLOCK_SIZE);
 
   int curr_item = blockIdx.x * TILE_SIZE + threadIdx.y;
@@ -143,10 +144,10 @@ void __global__ _RemoteIndexMemcpyKernel(chunk_tensor_wrapper<ValueType>* data,
 }
 
 template <typename ValueType, typename IndexType, int TILE_SIZE>
-void __global__ _HostIndexMemcpyKernel(chunk_tensor_wrapper<ValueType>* data,
-                                       const IndexType* const index,
-                                       const int num_items, const int dim_size,
-                                       ValueType* const output) {
+void __global__ _HostIndexMemcpyKernel(
+    chunk_tensor_wrapper<ValueType>* __restrict__ data,
+    const IndexType* __restrict__ const index, const int num_items,
+    const int dim_size, ValueType* __restrict__ const output) {
   assert(blockDim.x == BLOCK_SIZE);
 
   int curr_item = blockIdx.x * TILE_SIZE + threadIdx.y;
