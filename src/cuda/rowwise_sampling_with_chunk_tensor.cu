@@ -1,16 +1,16 @@
 #include <curand_kernel.h>
 #include <torch/script.h>
 
+#include "../cuda_common.h"
+#include "../dgs_headers.h"
 #include "atomic.h"
-#include "chunk_tensor.h"
 #include "cub_function.h"
-#include "cuda_common.h"
-#include "dgs_headers.h"
 #include "dgs_ops.h"
 
 #define BLOCK_SIZE 128
 
 namespace dgs {
+namespace cuda {
 
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformKernel(
@@ -182,7 +182,8 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
   return std::make_tuple(coo_row, coo_col);
 }
 
-std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniformWithChunkTensor(
+std::tuple<torch::Tensor, torch::Tensor>
+RowWiseSamplingUniformWithChunkTensorCUDA(
     torch::Tensor seeds, c10::intrusive_ptr<ChunkTensor> indptr,
     c10::intrusive_ptr<ChunkTensor> indices, int64_t num_picks, bool replace) {
   DGS_ID_TYPE_SWITCH(indptr->dtype_, IdType, {
@@ -191,4 +192,5 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniformWithChunkTensor(
   });
   return std::make_tuple(torch::Tensor(), torch::Tensor());
 }
+}  // namespace cuda
 }  // namespace dgs

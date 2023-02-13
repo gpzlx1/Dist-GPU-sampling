@@ -1,9 +1,10 @@
-#ifndef DGS_ATOMIC_H_
-#define DGS_ATOMIC_H_
+#ifndef DGS_CUDA_ATOMIC_H_
+#define DGS_CUDA_ATOMIC_H_
 
-#include "cuda_common.h"
+#include "../cuda_common.h"
 
 namespace dgs {
+namespace cuda {
 namespace atomic {
 
 inline __device__ int64_t AtomicMax(int64_t *const address, const int64_t val) {
@@ -164,7 +165,7 @@ inline __device__ float AtomicSub(float *const address, const float val) {
   return AtomicAdd(address, (-val));
 }
 }  // namespace atomic
-
+}  // namespace cuda
 }  // namespace dgs
 
 #endif

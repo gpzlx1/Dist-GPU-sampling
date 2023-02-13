@@ -1,12 +1,13 @@
 #include <torch/script.h>
 
+#include "../cuda_common.h"
+#include "../dgs_headers.h"
 #include "atomic.h"
 #include "cub_function.h"
-#include "cuda_common.h"
-#include "dgs_headers.h"
 #include "dgs_ops.h"
 
 namespace dgs {
+namespace cuda {
 template <typename IdType>
 struct RelabelHashmap {
   __device__ inline RelabelHashmap(IdType* __restrict__ Kptr,
@@ -178,7 +179,7 @@ inline torch::Tensor Relabel(torch::Tensor total_tensor,
   return relabel_tensor;
 }
 
-std::tuple<torch::Tensor, std::vector<torch::Tensor>> TensorRelabel(
+std::tuple<torch::Tensor, std::vector<torch::Tensor>> TensorRelabelCUDA(
     std::vector<torch::Tensor> mapping_tensors,
     std::vector<torch::Tensor> requiring_relabel_tensors) {
   std::vector<int64_t> split_sizes;
@@ -203,4 +204,5 @@ std::tuple<torch::Tensor, std::vector<torch::Tensor>> TensorRelabel(
   return std::make_tuple(unique_tensor, ret);
 }
 
+}  // namespace cuda
 }  // namespace dgs

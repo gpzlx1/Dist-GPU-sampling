@@ -1,11 +1,12 @@
 #include <torch/script.h>
+#include "../cuda_common.h"
+#include "../dgs_headers.h"
 #include "atomic.h"
-#include "cuda_common.h"
-#include "dgs_headers.h"
 #include "dgs_ops.h"
 
 #define BLOCK_SIZE 128
 namespace dgs {
+namespace cuda {
 template <typename IdType>
 struct Hashmap {
   __device__ inline Hashmap(IdType *__restrict__ Kptr,
@@ -90,7 +91,7 @@ inline int _UpPower(int key) {
   return ret;
 }
 
-std::tuple<torch::Tensor, torch::Tensor> CreateHashMapTensor(
+std::tuple<torch::Tensor, torch::Tensor> CreateHashMapTensorCUDA(
     torch::Tensor input_key, torch::Tensor input_value) {
   CHECK_CUDA(input_key);
   CHECK_CUDA(input_value);
@@ -192,9 +193,9 @@ __global__ void _FetchDataWithChunkTensorKernel(
   }
 }
 
-torch::Tensor FetchData(torch::Tensor cpu_data, torch::Tensor gpu_data,
-                        torch::Tensor nid, torch::Tensor hashed_key_tensor,
-                        torch::Tensor hashed_value_tensor) {
+torch::Tensor FetchDataCUDA(torch::Tensor cpu_data, torch::Tensor gpu_data,
+                            torch::Tensor nid, torch::Tensor hashed_key_tensor,
+                            torch::Tensor hashed_value_tensor) {
   CHECK_CUDA(gpu_data);
   CHECK_CUDA(nid);
   CHECK_CUDA(hashed_key_tensor);
@@ -224,11 +225,10 @@ torch::Tensor FetchData(torch::Tensor cpu_data, torch::Tensor gpu_data,
   return torch::Tensor();
 }
 
-torch::Tensor FetchDataWithChunkTensor(torch::Tensor cpu_data,
-                                       c10::intrusive_ptr<ChunkTensor> gpu_data,
-                                       torch::Tensor nid,
-                                       torch::Tensor hashed_key_tensor,
-                                       torch::Tensor hashed_value_tensor) {
+torch::Tensor FetchDataWithChunkTensorCUDA(
+    torch::Tensor cpu_data, c10::intrusive_ptr<ChunkTensor> gpu_data,
+    torch::Tensor nid, torch::Tensor hashed_key_tensor,
+    torch::Tensor hashed_value_tensor) {
   CHECK_CUDA(nid);
   CHECK_CUDA(hashed_key_tensor);
   CHECK_CUDA(hashed_value_tensor);
@@ -261,4 +261,5 @@ torch::Tensor FetchDataWithChunkTensor(torch::Tensor cpu_data,
   return torch::Tensor();
 }
 
+}  // namespace cuda
 }  // namespace dgs

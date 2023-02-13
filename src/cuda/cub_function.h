@@ -1,10 +1,11 @@
-#ifndef DGS_CUB_FUNCTION_H_
-#define DGS_CUB_FUNCTION_H_
+#ifndef DGS_CUDA_CUB_FUNCTION_H_
+#define DGS_CUDA_CUB_FUNCTION_H_
 
 #include <c10/cuda/CUDACachingAllocator.h>
 #include <cub/cub.cuh>
 
 namespace dgs {
+namespace cuda {
 
 template <typename IdType>
 inline void cub_exclusiveSum(IdType* arrays, const IdType array_length) {
@@ -18,9 +19,8 @@ inline void cub_exclusiveSum(IdType* arrays, const IdType array_length) {
   d_temp_storage = _temp_data.get();
   cub::DeviceScan::ExclusiveSum(d_temp_storage, temp_storage_bytes, arrays,
                                 arrays, array_length);
-
-}  // namespace cub
-
+}
+}  // namespace cuda
 }  // namespace dgs
 
 #endif

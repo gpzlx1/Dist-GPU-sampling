@@ -1,11 +1,11 @@
-#include "chunk_tensor.h"
-#include "cuda_common.h"
-#include "dgs_headers.h"
+#include "../cuda_common.h"
+#include "../dgs_headers.h"
 #include "dgs_ops.h"
 
 #define BLOCK_SIZE 128
 
 namespace dgs {
+namespace cuda {
 template <typename ValueType, typename IndexType, int TILE_SIZE>
 void __global__ _IndexMemcpyKernel(
     chunk_tensor_wrapper<ValueType>* __restrict__ data,
@@ -26,7 +26,8 @@ void __global__ _IndexMemcpyKernel(
   }
 }
 
-torch::Tensor IndexFromChunkTensor(ChunkTensor* c_tensor, torch::Tensor index) {
+torch::Tensor IndexFromChunkTensorCUDA(ChunkTensor* c_tensor,
+                                       torch::Tensor index) {
   CHECK_CUDA(index);
   DGS_VALUE_TYPE_SWITCH(c_tensor->dtype_, ValueType, {
     DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
@@ -78,7 +79,7 @@ __global__ void _GetSplitIndexMaskKernel(
 }
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
-SplitIndexFromChunkTensor(ChunkTensor* c_tensor, torch::Tensor index) {
+SplitIndexFromChunkTensorCUDA(ChunkTensor* c_tensor, torch::Tensor index) {
   CHECK_CUDA(index);
   DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
     int num_items = index.numel();
@@ -166,8 +167,8 @@ void __global__ _HostIndexMemcpyKernel(
   }
 }
 
-torch::Tensor LocalIndexFromChunkTensor(ChunkTensor* c_tensor,
-                                        torch::Tensor index) {
+torch::Tensor LocalIndexFromChunkTensorCUDA(ChunkTensor* c_tensor,
+                                            torch::Tensor index) {
   CHECK_CUDA(index);
   DGS_VALUE_TYPE_SWITCH(c_tensor->dtype_, ValueType, {
     DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
@@ -192,8 +193,8 @@ torch::Tensor LocalIndexFromChunkTensor(ChunkTensor* c_tensor,
   return torch::Tensor();
 }
 
-torch::Tensor RemoteIndexFromChunkTensor(ChunkTensor* c_tensor,
-                                         torch::Tensor index) {
+torch::Tensor RemoteIndexFromChunkTensorCUDA(ChunkTensor* c_tensor,
+                                             torch::Tensor index) {
   CHECK_CUDA(index);
   DGS_VALUE_TYPE_SWITCH(c_tensor->dtype_, ValueType, {
     DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
@@ -219,8 +220,8 @@ torch::Tensor RemoteIndexFromChunkTensor(ChunkTensor* c_tensor,
   return torch::Tensor();
 }
 
-torch::Tensor HostIndexFromChunkTensor(ChunkTensor* c_tensor,
-                                       torch::Tensor index) {
+torch::Tensor HostIndexFromChunkTensorCUDA(ChunkTensor* c_tensor,
+                                           torch::Tensor index) {
   CHECK_CUDA(index);
   DGS_VALUE_TYPE_SWITCH(c_tensor->dtype_, ValueType, {
     DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
@@ -245,4 +246,5 @@ torch::Tensor HostIndexFromChunkTensor(ChunkTensor* c_tensor,
   return torch::Tensor();
 }
 
+}  // namespace cuda
 }  // namespace dgs

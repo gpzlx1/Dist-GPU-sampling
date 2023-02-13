@@ -31,6 +31,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 file(GLOB DGS_SRC
   src/*.cu
   src/*.cc
+  src/cuda/*.cu
 )
 add_library(dgs SHARED ${DGS_SRC})
 set_target_properties(dgs PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

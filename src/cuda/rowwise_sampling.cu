@@ -1,15 +1,15 @@
 #include <curand_kernel.h>
 #include <torch/script.h>
 
+#include "../cuda_common.h"
+#include "../dgs_headers.h"
 #include "atomic.h"
 #include "cub_function.h"
-#include "cuda_common.h"
-#include "dgs_headers.h"
 #include "dgs_ops.h"
 
 #define BLOCK_SIZE 128
 namespace dgs {
-
+namespace cuda {
 template <typename IdType>
 inline torch::Tensor _GetSubIndptr(torch::Tensor seeds, torch::Tensor indptr,
                                    int64_t num_pick, bool replace) {
@@ -173,7 +173,7 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniformCUDA(
   return std::make_tuple(coo_row, coo_col);
 }
 
-std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniform(
+std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniformCUDA(
     torch::Tensor seeds, torch::Tensor indptr, torch::Tensor indices,
     int64_t num_picks, bool replace) {
   CHECK_CUDA(seeds);
@@ -185,4 +185,5 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniform(
   });
   return std::make_tuple(torch::Tensor(), torch::Tensor());
 }
+}  // namespace cuda
 }  // namespace dgs

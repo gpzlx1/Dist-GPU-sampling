@@ -2,8 +2,8 @@
 #include <sys/shm.h>
 
 #include "chunk_tensor.h"
+#include "cuda/dgs_ops.h"
 #include "cuda_context.h"
-#include "dgs_ops.h"
 #include "nccl_context.h"
 
 namespace dgs {
@@ -193,23 +193,23 @@ void ChunkTensor::LoadFromTensor(torch::Tensor data) {
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> ChunkTensor::SplitIndex(
     torch::Tensor index) {
-  return SplitIndexFromChunkTensor(this, index);
+  return cuda::SplitIndexFromChunkTensorCUDA(this, index);
 }
 
 torch::Tensor ChunkTensor::Index(torch::Tensor index) {
-  return IndexFromChunkTensor(this, index);
+  return cuda::IndexFromChunkTensorCUDA(this, index);
 }
 
 torch::Tensor ChunkTensor::LocalIndex(torch::Tensor index) {
-  return LocalIndexFromChunkTensor(this, index);
+  return cuda::LocalIndexFromChunkTensorCUDA(this, index);
 }
 
 torch::Tensor ChunkTensor::RemoteIndex(torch::Tensor index) {
-  return RemoteIndexFromChunkTensor(this, index);
+  return cuda::RemoteIndexFromChunkTensorCUDA(this, index);
 }
 
 torch::Tensor ChunkTensor::HostIndex(torch::Tensor index) {
-  return HostIndexFromChunkTensor(this, index);
+  return cuda::HostIndexFromChunkTensorCUDA(this, index);
 }
 
 void ChunkTensor::_CreateWrapperPtr() {

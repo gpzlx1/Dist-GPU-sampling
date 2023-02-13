@@ -2,7 +2,7 @@
 #include <torch/script.h>
 
 #include "chunk_tensor.h"
-#include "dgs_ops.h"
+#include "cuda/dgs_ops.h"
 #include "cuda_context.h"
 #include "nccl_context.h"
 
@@ -22,17 +22,17 @@ TORCH_LIBRARY(dgs_classes, m) {
 }
 
 TORCH_LIBRARY(dgs_ops, m) {
-  m.def("_CAPI_tensor_relabel", &TensorRelabel)
-      .def("_CAPI_sample_neighbors", &RowWiseSamplingUniform)
+  m.def("_CAPI_tensor_relabel", &cuda::TensorRelabelCUDA)
+      .def("_CAPI_sample_neighbors", &cuda::RowWiseSamplingUniformCUDA)
       .def("_CAPI_sample_neighbors_with_chunk_tensor",
-           &RowWiseSamplingUniformWithChunkTensor)
-      .def("_CAPI_sample_neighbors_with_probs", &RowWiseSamplingProb)
+           &cuda::RowWiseSamplingUniformWithChunkTensorCUDA)
+      .def("_CAPI_sample_neighbors_with_probs", &cuda::RowWiseSamplingProbCUDA)
       .def("_CAPI_sample_neighbors_with_probs_with_chunk_tensor",
-           &RowWiseSamplingProbWithChunkTensor)
+           &cuda::RowWiseSamplingProbWithChunkTensorCUDA)
+      .def("_CAPI_create_hash_map", &cuda::CreateHashMapTensorCUDA)
+      .def("_CAPI_fetch_data", &cuda::FetchDataCUDA)
+      .def("_CAPI_fetch_data_chunk_tensor", &cuda::FetchDataWithChunkTensorCUDA)
       .def("_CAPI_get_unique_id", &nccl::GetUniqueId)
       .def("_CAPI_set_nccl", &nccl::SetNCCL)
-      .def("_CAPI_create_hash_map", &CreateHashMapTensor)
-      .def("_CAPI_fetch_data", &FetchData)
-      .def("_CAPI_fetch_data_chunk_tensor", &FetchDataWithChunkTensor)
       .def("_CAPI_get_current_allocated", &CUDAContext::GetCurrAllocated);
 }
