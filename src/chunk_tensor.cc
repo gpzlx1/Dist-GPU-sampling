@@ -1,4 +1,5 @@
 #include "chunk_tensor.h"
+#include "dgs_ops.h"
 
 namespace dgs {
 
@@ -159,6 +160,27 @@ void ChunkTensor::LoadFromTensor(torch::Tensor data) {
             each_partion_size_t * num_partitions_,
         host_elem_size_ * dtype_size_t_, cudaMemcpyHostToHost));
   }
+}
+
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> ChunkTensor::SplitIndex(
+    torch::Tensor index) {
+  return SplitIndexFromChunkTensor(this, index);
+}
+
+torch::Tensor ChunkTensor::Index(torch::Tensor index) {
+  return IndexFromChunkTensor(this, index);
+}
+
+torch::Tensor ChunkTensor::LocalIndex(torch::Tensor index) {
+  return LocalIndexFromChunkTensor(this, index);
+}
+
+torch::Tensor ChunkTensor::RemoteIndex(torch::Tensor index) {
+  return RemoteIndexFromChunkTensor(this, index);
+}
+
+torch::Tensor ChunkTensor::HostIndex(torch::Tensor index) {
+  return HostIndexFromChunkTensor(this, index);
 }
 
 void ChunkTensor::_CreateWrapperPtr() {
