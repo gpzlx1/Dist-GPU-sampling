@@ -5,9 +5,32 @@
 #include "cuda_context.h"
 #include "dgs_ops.h"
 #include "nccl_context.h"
-#include "utils.h"
 
 namespace dgs {
+
+inline void *_getTensorVoidDataPtr(torch::Tensor data) {
+  return data.storage().data();
+}
+
+inline size_t _getTensorTypeSizeOf(torch::Dtype type) {
+  if (type == torch::kInt32) {
+    return sizeof(int32_t);
+  } else if (type == torch::kInt64) {
+    return sizeof(int64_t);
+  } else if (type == torch::kFloat) {
+    return sizeof(float);
+  } else if (type == torch::kDouble) {
+    return sizeof(double);
+  } else {
+    fprintf(stderr, "Error in _getTensorSizeInByte!\n");
+    exit(-1);
+  }
+}
+
+inline size_t _getTensorSizeInByte(torch::Tensor data) {
+  return _getTensorTypeSizeOf(torch::typeMetaToScalarType(data.dtype())) *
+         data.numel();
+}
 
 ChunkTensor::ChunkTensor(std::vector<int64_t> shapes, torch::ScalarType dtype,
                          int64_t capacity_per_gpu) {
@@ -28,7 +51,7 @@ ChunkTensor::ChunkTensor(std::vector<int64_t> shapes, torch::ScalarType dtype,
   elem_stride_ = strides_[0];
   total_elem_size_ = stride;
   dtype_ = dtype;
-  dtype_size_t_ = utils::_getTensorTypeSizeOf(dtype_);
+  dtype_size_t_ = _getTensorTypeSizeOf(dtype_);
   device_elem_size_ = capacity_per_gpu / dtype_size_t_;
   threshold_ = device_elem_size_ * num_partitions_;
   device_ptrs_.resize(num_partitions_);
@@ -128,7 +151,7 @@ torch::Tensor ChunkTensor::GetHostTensor() {
         host_ptr_, host_elem_size_,
         torch::TensorOptions().device(torch::kCPU).dtype(dtype_));
   } else {
-    printf("No uva_host_ptr is needed for this data!\n");
+    fprintf(stderr, "HostTensor is not needed for this data!\n");
     return torch::Tensor();
   }
 }
@@ -153,18 +176,18 @@ void ChunkTensor::LoadFromTensor(torch::Tensor data) {
   for (int i = 0; i < num_partitions_; i++) {
     CUDA_CALL(cudaMemcpy(
         device_ptrs_[i],
-        reinterpret_cast<char *>(utils::_getTensorVoidDataPtr(data)) +
+        reinterpret_cast<char *>(_getTensorVoidDataPtr(data)) +
             i * each_partion_size_t,
         MIN(each_partion_size_t,
             total_elem_size_ * dtype_size_t_ - i * each_partion_size_t),
         cudaMemcpyHostToDevice));
   }
   if (host_elem_size_ > 0) {
-    CUDA_CALL(cudaMemcpy(
-        host_ptr_,
-        reinterpret_cast<char *>(utils::_getTensorVoidDataPtr(data)) +
-            each_partion_size_t * num_partitions_,
-        host_elem_size_ * dtype_size_t_, cudaMemcpyHostToHost));
+    CUDA_CALL(cudaMemcpy(host_ptr_,
+                         reinterpret_cast<char *>(_getTensorVoidDataPtr(data)) +
+                             each_partion_size_t * num_partitions_,
+                         host_elem_size_ * dtype_size_t_,
+                         cudaMemcpyHostToHost));
   }
 }
 
