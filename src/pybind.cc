@@ -22,9 +22,7 @@ TORCH_LIBRARY(dgs_classes, m) {
 }
 
 TORCH_LIBRARY(dgs_ops, m) {
-  m.def("_CAPI_hello_world", &hello_world_from_gpu)
-      .def("_CAPI_test_chunk_tensor", &test_chunk_tensor)
-      .def("_CAPI_tensor_relabel", &TensorRelabel)
+  m.def("_CAPI_tensor_relabel", &TensorRelabel)
       .def("_CAPI_sample_neighbors", &RowWiseSamplingUniform)
       .def("_CAPI_sample_neighbors_with_chunk_tensor",
            &RowWiseSamplingUniformWithChunkTensor)
