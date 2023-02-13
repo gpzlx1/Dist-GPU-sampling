@@ -7,6 +7,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
+#include "./common.h"
 #include "./cuda_common.h"
 #include "./utils.h"
 #include "cuda_context.h"
@@ -82,7 +83,6 @@ class ChunkTensor : public torch::CustomClassHolder {
       stride *= shapes[i];
     }
 
-    // todo: remove elem_stride_ in the future
     elem_stride_ = strides_[0];
     total_elem_size_ = stride;
     dtype_ = dtype;
@@ -110,11 +110,7 @@ class ChunkTensor : public torch::CustomClassHolder {
         // malloc shared memory for read and write
         shmid = shmget((key_t)0x12345, host_elem_size_ * dtype_size_t_,
                        IPC_CREAT | IPC_EXCL | 0666);
-        if (shmid == -1) {
-          std::cout << "Create share memory for chunktensor failed!"
-                    << std::endl;
-          std::cout << std::strerror(errno) << std::endl;
-        }
+        SHM_CHECK(shmid);
       }
 
       // HostRegister for direct communication via nccl;
@@ -127,10 +123,7 @@ class ChunkTensor : public torch::CustomClassHolder {
       // get share memory address
       host_ptr_ = (void *)shmat(shmid, nullptr, 0);
       shmid_ = shmid;
-      if (reinterpret_cast<int64_t>(host_ptr_) == -1) {
-        std::cout << "Attach share memory for chunktensor failed!" << std::endl;
-        std::cout << std::strerror(errno) << std::endl;
-      }
+      SHM_CHECK(reinterpret_cast<int64_t>(host_ptr_));
       CUDA_CALL(cudaHostRegister(host_ptr_, host_elem_size_ * dtype_size_t_,
                                  cudaHostRegisterDefault));
     }
@@ -263,19 +256,12 @@ class ChunkTensor : public torch::CustomClassHolder {
     if (host_elem_size_ > 0) {
       CUDA_CALL(cudaHostUnregister(host_ptr_));
       err = shmdt(host_ptr_);
-      if (err == -1) {
-        std::cout << "Detach share memory for chunktensor failed!" << std::endl;
-        std::cout << std::strerror(errno) << std::endl;
-      }
+      SHM_CHECK(err);
 
       nccl::_Barrier();
       if (local_rank_ == 0) {
         int err = shmctl(shmid_, IPC_RMID, nullptr);
-        if (err == -1) {
-          std::cout << "Delete share memory for chunktensor failed!"
-                    << std::endl;
-          std::cout << std::strerror(errno) << std::endl;
-        }
+        SHM_CHECK(err);
       }
     }
 
