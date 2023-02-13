@@ -71,6 +71,7 @@ class ChunkTensor : public torch::CustomClassHolder {
   ChunkTensor(std::vector<int64_t> shapes, torch::ScalarType dtype,
               int64_t capacity_per_gpu) {
     CHECK(shapes.size() == 1 || shapes.size() == 2);
+    CHECK(capacity_per_gpu > 0);
 
     printf("Begin\n");
 
@@ -226,6 +227,9 @@ class ChunkTensor : public torch::CustomClassHolder {
 
   void LoadFromTensor(torch::Tensor data) {
     CHECK(static_cast<size_t>(data.dim()) == shapes_.size());
+    CHECK(data.dtype() == type_);
+    CHECK(data.device() == torch::kCPU);
+
     for (uint64_t i = 0; i < shapes_.size(); i++) {
       CHECK(data.size(i) == shapes_[i]);
       CHECK(data.stride(i) == strides_[i]);
@@ -268,25 +272,15 @@ class ChunkTensor : public torch::CustomClassHolder {
     int err = 0;
 
     // detach Host shared memory;
-    CUDA_CALL(cudaHostUnregister(uva_host_ptr_));
-    err = shmdt(uva_host_ptr_);
-    if (err == -1) {
-      std::cout << "Detach share memory for chunktensor failed!" << std::endl;
-      std::cout << std::strerror(errno) << std::endl;
-    }
-
-    if (num_partitions_ > 1 && partion_device_tensor_size_ > 0) {
-      // detach GPU shared memory;
-      for (int i = 0; i < num_partitions_; i++) {
-        if (local_rank_ != i)
-          CUDA_CALL(cudaIpcCloseMemHandle(uva_device_ptrs_[i]);)
-      }
-    }
-    nccl::_Barrier();
-
-    // free
-    CUDAContext::cuda_context.raw_delete(uva_device_ptrs_[local_rank_]);
     if (host_tensor_size_ > 0) {
+      CUDA_CALL(cudaHostUnregister(uva_host_ptr_));
+      err = shmdt(uva_host_ptr_);
+      if (err == -1) {
+        std::cout << "Detach share memory for chunktensor failed!" << std::endl;
+        std::cout << std::strerror(errno) << std::endl;
+      }
+
+      nccl::_Barrier();
       if (local_rank_ == 0) {
         int err = shmctl(shmid_, IPC_RMID, nullptr);
         if (err == -1) {
@@ -296,9 +290,19 @@ class ChunkTensor : public torch::CustomClassHolder {
         }
       }
     }
+
+    // detach GPU shared memory;
+    if (num_partitions_ > 1 && partion_device_tensor_size_ > 0) {
+      for (int i = 0; i < num_partitions_; i++) {
+        if (local_rank_ != i)
+          CUDA_CALL(cudaIpcCloseMemHandle(uva_device_ptrs_[i]);)
+      }
+    }
+    nccl::_Barrier();
+    CUDAContext::cuda_context.raw_delete(uva_device_ptrs_[local_rank_]);
   }
 
-  torch::Dtype type_;
+  torch::ScalarType type_;
   // sizoef(type_)
   int64_t type_size_t_;
 
