@@ -36,14 +36,14 @@ __global__ void add_kernel(void** ptrs, int num_item, int num_ptr) {
 }
 
 void test_chunk_tensor(c10::intrusive_ptr<ChunkTensor> c_tensor, int64_t mode) {
-  thrust::device_vector<void*> d_vector = c_tensor->uva_device_ptrs_;
+  thrust::device_vector<void*> d_vector = c_tensor->device_ptrs_;
   if (mode == 0) {
     print_kernel<int64_t><<<1, 1>>>(thrust::raw_pointer_cast(d_vector.data()),
-                                    c_tensor->partion_device_tensor_size_,
+                                    c_tensor->device_elem_size_,
                                     d_vector.size());
   } else {
     add_kernel<int64_t><<<1, 1>>>(thrust::raw_pointer_cast(d_vector.data()),
-                                  c_tensor->partion_device_tensor_size_,
+                                  c_tensor->device_elem_size_,
                                   d_vector.size());
   }
 }

@@ -234,7 +234,7 @@ torch::Tensor FetchDataWithChunkTensor(torch::Tensor cpu_data,
           torch::TensorOptions().dtype(cpu_data.dtype()).device(torch::kCUDA));
       chunk_tensor_wrapper<FloatType> *gpu_data_wrapper_ptr =
           reinterpret_cast<chunk_tensor_wrapper<FloatType> *>(
-              gpu_data->wrapper_ptr_);
+              gpu_data->wrapper_chunktensor_ptr_);
       constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
       const dim3 block(BLOCK_SIZE);
       const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);

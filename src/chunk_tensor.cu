@@ -26,21 +26,22 @@ void __global__ _IndexMemcpyKernel(chunk_tensor_wrapper<ValueType>* data,
 
 torch::Tensor ChunkTensor::Index(torch::Tensor index) {
   CHECK_CUDA(index);
-  DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
+  DGS_VALUE_TYPE_SWITCH(dtype_, ValueType, {
     DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
       int num_items = index.numel();
       torch::Tensor out_data = torch::empty(
-          {num_items, stride_},
-          torch::TensorOptions().dtype(type_).device(torch::kCUDA));
+          {num_items, elem_stride_},
+          torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
       chunk_tensor_wrapper<ValueType>* data_wrapper_ptr =
-          reinterpret_cast<chunk_tensor_wrapper<ValueType>*>(wrapper_ptr_);
+          reinterpret_cast<chunk_tensor_wrapper<ValueType>*>(
+              wrapper_chunktensor_ptr_);
 
       constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
       const dim3 block(BLOCK_SIZE);
       const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
-      _IndexMemcpyKernel<ValueType, IndexType, TILE_SIZE>
-          <<<grid, block>>>(data_wrapper_ptr, index.data_ptr<IndexType>(),
-                            num_items, stride_, out_data.data_ptr<ValueType>());
+      _IndexMemcpyKernel<ValueType, IndexType, TILE_SIZE><<<grid, block>>>(
+          data_wrapper_ptr, index.data_ptr<IndexType>(), num_items,
+          elem_stride_, out_data.data_ptr<ValueType>());
       return out_data;
     });
   });
@@ -90,8 +91,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> ChunkTensor::SplitIndex(
     const dim3 block(BLOCK_SIZE);
     const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
     _GetSplitIndexMaskKernel<IndexType, TILE_SIZE><<<grid, block>>>(
-        num_items, local_rank_, threshold_, partion_device_tensor_size_,
-        stride_, index.data_ptr<IndexType>(), local_index_mask.data_ptr<bool>(),
+        num_items, local_rank_, threshold_, device_elem_size_, elem_stride_,
+        index.data_ptr<IndexType>(), local_index_mask.data_ptr<bool>(),
         remote_index_mask.data_ptr<bool>(), host_index_mask.data_ptr<bool>());
     return std::make_tuple(index.index({local_index_mask}),
                            index.index({remote_index_mask}),
@@ -163,21 +164,22 @@ void __global__ _HostIndexMemcpyKernel(chunk_tensor_wrapper<ValueType>* data,
 
 torch::Tensor ChunkTensor::LocalIndex(torch::Tensor index) {
   CHECK_CUDA(index);
-  DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
+  DGS_VALUE_TYPE_SWITCH(dtype_, ValueType, {
     DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
       int num_items = index.numel();
       torch::Tensor out_data = torch::empty(
-          {num_items, stride_},
-          torch::TensorOptions().dtype(type_).device(torch::kCUDA));
+          {num_items, elem_stride_},
+          torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
       chunk_tensor_wrapper<ValueType>* data_wrapper_ptr =
-          reinterpret_cast<chunk_tensor_wrapper<ValueType>*>(wrapper_ptr_);
+          reinterpret_cast<chunk_tensor_wrapper<ValueType>*>(
+              wrapper_chunktensor_ptr_);
 
       constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
       const dim3 block(BLOCK_SIZE);
       const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
-      _LocalIndexMemcpyKernel<ValueType, IndexType, TILE_SIZE>
-          <<<grid, block>>>(data_wrapper_ptr, index.data_ptr<IndexType>(),
-                            num_items, stride_, out_data.data_ptr<ValueType>());
+      _LocalIndexMemcpyKernel<ValueType, IndexType, TILE_SIZE><<<grid, block>>>(
+          data_wrapper_ptr, index.data_ptr<IndexType>(), num_items,
+          elem_stride_, out_data.data_ptr<ValueType>());
       return out_data;
     });
   });
@@ -187,21 +189,23 @@ torch::Tensor ChunkTensor::LocalIndex(torch::Tensor index) {
 
 torch::Tensor ChunkTensor::RemoteIndex(torch::Tensor index) {
   CHECK_CUDA(index);
-  DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
+  DGS_VALUE_TYPE_SWITCH(dtype_, ValueType, {
     DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
       int num_items = index.numel();
       torch::Tensor out_data = torch::empty(
-          {num_items, stride_},
-          torch::TensorOptions().dtype(type_).device(torch::kCUDA));
+          {num_items, elem_stride_},
+          torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
       chunk_tensor_wrapper<ValueType>* data_wrapper_ptr =
-          reinterpret_cast<chunk_tensor_wrapper<ValueType>*>(wrapper_ptr_);
+          reinterpret_cast<chunk_tensor_wrapper<ValueType>*>(
+              wrapper_chunktensor_ptr_);
 
       constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
       const dim3 block(BLOCK_SIZE);
       const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
       _RemoteIndexMemcpyKernel<ValueType, IndexType, TILE_SIZE>
           <<<grid, block>>>(data_wrapper_ptr, index.data_ptr<IndexType>(),
-                            num_items, stride_, out_data.data_ptr<ValueType>());
+                            num_items, elem_stride_,
+                            out_data.data_ptr<ValueType>());
       return out_data;
     });
   });
@@ -211,21 +215,22 @@ torch::Tensor ChunkTensor::RemoteIndex(torch::Tensor index) {
 
 torch::Tensor ChunkTensor::HostIndex(torch::Tensor index) {
   CHECK_CUDA(index);
-  DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
+  DGS_VALUE_TYPE_SWITCH(dtype_, ValueType, {
     DGS_ID_TYPE_SWITCH(index.dtype(), IndexType, {
       int num_items = index.numel();
       torch::Tensor out_data = torch::empty(
-          {num_items, stride_},
-          torch::TensorOptions().dtype(type_).device(torch::kCUDA));
+          {num_items, elem_stride_},
+          torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
       chunk_tensor_wrapper<ValueType>* data_wrapper_ptr =
-          reinterpret_cast<chunk_tensor_wrapper<ValueType>*>(wrapper_ptr_);
+          reinterpret_cast<chunk_tensor_wrapper<ValueType>*>(
+              wrapper_chunktensor_ptr_);
 
       constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
       const dim3 block(BLOCK_SIZE);
       const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
-      _HostIndexMemcpyKernel<ValueType, IndexType, TILE_SIZE>
-          <<<grid, block>>>(data_wrapper_ptr, index.data_ptr<IndexType>(),
-                            num_items, stride_, out_data.data_ptr<ValueType>());
+      _HostIndexMemcpyKernel<ValueType, IndexType, TILE_SIZE><<<grid, block>>>(
+          data_wrapper_ptr, index.data_ptr<IndexType>(), num_items,
+          elem_stride_, out_data.data_ptr<ValueType>());
       return out_data;
     });
   });
