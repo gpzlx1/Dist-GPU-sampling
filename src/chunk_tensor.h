@@ -4,6 +4,9 @@
 #include <c10/cuda/CUDACachingAllocator.h>
 #include <torch/script.h>
 
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
 #include "./cuda_common.h"
 #include "./utils.h"
 #include "cuda_context.h"
@@ -65,15 +68,28 @@ struct chunk_tensor_wrapper {
 
 class ChunkTensor : public torch::CustomClassHolder {
  public:
-  ChunkTensor(torch::Tensor data, int64_t capacity_per_gpu) {
-    CHECK(data.dim() == 1 or data.dim() == 2);
-    CHECK_CPU(data);
+  ChunkTensor(std::vector<int64_t> shapes, torch::ScalarType dtype,
+              int64_t capacity_per_gpu) {
+    CHECK(shapes.size() == 1 || shapes.size() == 2);
+
+    printf("Begin\n");
+
     local_rank_ = nccl::local_rank;
     num_partitions_ = nccl::world_size;
+    int64_t stride = 1;
 
-    total_tensor_size_ = data.numel();
-    stride_ = data.stride(0);
-    type_ = torch::typeMetaToScalarType(data.dtype());
+    shapes_.assign(shapes.begin(), shapes.end());
+    strides_.resize(shapes.size());
+    for (int i = shapes.size() - 1; i >= 0; i--) {
+      strides_[i] = stride;
+      stride *= shapes[i];
+    }
+    printf("0\n");
+
+    // todo: remove stride_ in the future
+    stride_ = strides_[0];
+    total_tensor_size_ = stride;
+    type_ = dtype;
     type_size_t_ = utils::_getTensorTypeSizeOf(type_);
     partion_device_tensor_size_ = capacity_per_gpu / type_size_t_;
     threshold_ = partion_device_tensor_size_ * num_partitions_;
@@ -81,35 +97,62 @@ class ChunkTensor : public torch::CustomClassHolder {
     for (int i = 0; i < num_partitions_; i++) {
       uva_device_ptrs_[i] = nullptr;
     }
+    printf("1\n");
 
     if (threshold_ > total_tensor_size_) {
       threshold_ = total_tensor_size_;
       partion_device_tensor_size_ =
           (total_tensor_size_ + num_partitions_ - 1) / num_partitions_;
     }
+    printf("2\n");
 
-    // cudaHostRegister for uva_host_ptr_
-    host_tensor_ = data;  // avoid data are freed.
-    uva_host_ptr_ = utils::_getTensorVoidDataPtr(data);
-    CUDA_CALL(cudaHostRegister(uva_host_ptr_, total_tensor_size_ * type_size_t_,
-                               cudaHostRegisterDefault));
+    // malloc shared memory for uva_host_ptr_;
+    // todo
+    uva_host_ptr_ = nullptr;
+    host_tensor_size_ = total_tensor_size_ - threshold_;
+    int shmid;
+    if (host_tensor_size_ > 0) {
+      if (local_rank_ == 0) {
+        // malloc shared memory for read and write
+        shmid = shmget((key_t)0x12345, host_tensor_size_ * type_size_t_,
+                       IPC_CREAT | IPC_EXCL | 0666);
+        if (shmid == -1) {
+          std::cout << "Create share memory for chunktensor failed!"
+                    << std::endl;
+          std::cout << std::strerror(errno) << std::endl;
+        }
+      }
 
+      // HostRegister for direct communication via nccl;
+      CUDA_CALL(cudaHostRegister(&shmid, sizeof(int), cudaHostRegisterDefault));
+      NCCL_CALL(ncclBroadcast(&shmid, &shmid, 1, ncclInt, 0, nccl::global_comm,
+                              nccl::nccl_stream));
+      nccl::_Barrier();
+      CUDA_CALL(cudaHostUnregister(&shmid));
+
+      // get share memory address
+      uva_host_ptr_ = (void *)shmat(shmid, nullptr, 0);
+      shmid_ = shmid;
+      if (reinterpret_cast<int64_t>(uva_host_ptr_) == -1) {
+        std::cout << "Attach share memory for chunktensor failed!" << std::endl;
+        std::cout << std::strerror(errno) << std::endl;
+      }
+      CUDA_CALL(cudaHostRegister(uva_host_ptr_,
+                                 host_tensor_size_ * type_size_t_,
+                                 cudaHostRegisterDefault));
+    }
+    printf("3\n");
+
+    // Malloc GPU shared memory for uva_device_ptrs_;
     if (partion_device_tensor_size_ > 0) {
-      // Malloc for uva_device_ptr/uva_device_ptrs_
-      // use CUDACachingAllocator, so torch.cuda.max_memory_allocated can read
-      // how much memory is allocated for chunk tensor
+      // Malloc for uva_device_ptr/uva_device_ptrs_ by CUDACachingAllocator, so
+      // torch.cuda.max_memory_allocated can read how much memory is allocated
+      // for chunk tensor
       size_t each_partion_size_t = partion_device_tensor_size_ * type_size_t_;
       void *uva_device_ptr =
           CUDAContext::cuda_context.raw_alloc(each_partion_size_t);
 
       CUDA_CALL(cudaMemset(uva_device_ptr, -1, each_partion_size_t));
-      CUDA_CALL(cudaMemcpy(
-          uva_device_ptr,
-          reinterpret_cast<char *>(utils::_getTensorVoidDataPtr(data)) +
-              local_rank_ * each_partion_size_t,
-          MIN(each_partion_size_t, total_tensor_size_ * type_size_t_ -
-                                       local_rank_ * each_partion_size_t),
-          cudaMemcpyHostToDevice));
       uva_device_ptrs_[local_rank_] = uva_device_ptr;
 
       // Context IPC for uva_device_ptrs_
@@ -118,6 +161,7 @@ class ChunkTensor : public torch::CustomClassHolder {
         cudaIpcMemHandle_t ipc_device_mem_handle_recvbuff[num_partitions_];
 
         CUDA_CALL(cudaIpcGetMemHandle(&ipc_device_mem_handle, uva_device_ptr));
+        // HostRegister for direct communication via nccl;
         CUDA_CALL(cudaHostRegister(&ipc_device_mem_handle,
                                    sizeof(cudaIpcMemHandle_t),
                                    cudaHostRegisterDefault));
@@ -133,15 +177,15 @@ class ChunkTensor : public torch::CustomClassHolder {
         CUDA_CALL(cudaHostUnregister(ipc_device_mem_handle_recvbuff));
 
         // after communication, setup uva_device_ptrs_;
-        for (int i = 0; i < int(uva_device_ptrs_.size()); i++) {
-          if (i != local_rank_) {
+        for (int i = 0; i < static_cast<int>(uva_device_ptrs_.size()); i++) {
+          if (i != local_rank_)
             CUDA_CALL(cudaIpcOpenMemHandle(&uva_device_ptrs_[i],
                                            ipc_device_mem_handle_recvbuff[i],
                                            cudaIpcMemLazyEnablePeerAccess));
-          }
         }
       }
     }
+    printf("4\n");
 
     // create wrapper
     uva_device_ptrs_data_ = reinterpret_cast<void **>(
@@ -151,14 +195,15 @@ class ChunkTensor : public torch::CustomClassHolder {
                          sizeof(void *) * num_partitions_,
                          cudaMemcpyHostToDevice));
     _CreateWrapperPtr();
-  };
+    printf("5\n");
+  }
 
   ~ChunkTensor() { _Free(); }
 
   torch::Tensor GetHostTensor() {
     if (uva_host_ptr_ != nullptr) {
       return torch::from_blob(
-          uva_host_ptr_, total_tensor_size_,
+          uva_host_ptr_, host_tensor_size_,
           torch::TensorOptions().device(torch::kCPU).dtype(type_));
     } else {
       printf("No uva_host_ptr is needed for this data!\n");
@@ -179,6 +224,32 @@ class ChunkTensor : public torch::CustomClassHolder {
   std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> SplitIndex(
       torch::Tensor index);
 
+  void LoadFromTensor(torch::Tensor data) {
+    CHECK(static_cast<size_t>(data.dim()) == shapes_.size());
+    for (uint64_t i = 0; i < shapes_.size(); i++) {
+      CHECK(data.size(i) == shapes_[i]);
+      CHECK(data.stride(i) == strides_[i]);
+    }
+    // memcpy
+    int64_t each_partion_size_t = partion_device_tensor_size_ * type_size_t_;
+    for (int i = 0; i < num_partitions_; i++) {
+      CUDA_CALL(cudaMemcpy(
+          uva_device_ptrs_[i],
+          reinterpret_cast<char *>(utils::_getTensorVoidDataPtr(data)) +
+              i * each_partion_size_t,
+          MIN(each_partion_size_t,
+              total_tensor_size_ * type_size_t_ - i * each_partion_size_t),
+          cudaMemcpyHostToDevice));
+    }
+    if (host_tensor_size_ > 0) {
+      CUDA_CALL(cudaMemcpy(
+          uva_host_ptr_,
+          reinterpret_cast<char *>(utils::_getTensorVoidDataPtr(data)) +
+              each_partion_size_t * num_partitions_,
+          host_tensor_size_ * type_size_t_, cudaMemcpyHostToHost));
+    }
+  }
+
   void _CreateWrapperPtr() {
     DGS_VALUE_TYPE_SWITCH(type_, ValueType, {
       chunk_tensor_wrapper<ValueType> wrapper(
@@ -194,28 +265,49 @@ class ChunkTensor : public torch::CustomClassHolder {
   void _Free() {
     CUDAContext::cuda_context.raw_delete(uva_device_ptrs_data_);
     CUDAContext::cuda_context.raw_delete(wrapper_ptr_);
+    int err = 0;
 
+    // detach Host shared memory;
     CUDA_CALL(cudaHostUnregister(uva_host_ptr_));
-    host_tensor_ = torch::Tensor();
+    err = shmdt(uva_host_ptr_);
+    if (err == -1) {
+      std::cout << "Detach share memory for chunktensor failed!" << std::endl;
+      std::cout << std::strerror(errno) << std::endl;
+    }
 
     if (num_partitions_ > 1 && partion_device_tensor_size_ > 0) {
+      // detach GPU shared memory;
       for (int i = 0; i < num_partitions_; i++) {
         if (local_rank_ != i)
           CUDA_CALL(cudaIpcCloseMemHandle(uva_device_ptrs_[i]);)
       }
-      nccl::_Barrier();
     }
+    nccl::_Barrier();
 
-    // free uva_device_ptrs_.
+    // free
     CUDAContext::cuda_context.raw_delete(uva_device_ptrs_[local_rank_]);
+    if (host_tensor_size_ > 0) {
+      if (local_rank_ == 0) {
+        int err = shmctl(shmid_, IPC_RMID, nullptr);
+        if (err == -1) {
+          std::cout << "Delete share memory for chunktensor failed!"
+                    << std::endl;
+          std::cout << std::strerror(errno) << std::endl;
+        }
+      }
+    }
   }
 
   torch::Dtype type_;
   // sizoef(type_)
   int64_t type_size_t_;
 
+  std::vector<int64_t> strides_;
+  std::vector<int64_t> shapes_;
+
   int64_t partion_device_tensor_size_;
   int64_t total_tensor_size_;
+  int64_t host_tensor_size_;
   int64_t stride_;
 
   int64_t threshold_;
@@ -223,13 +315,13 @@ class ChunkTensor : public torch::CustomClassHolder {
 
   int64_t local_rank_;
 
+  int shmid_ = -1;
+
   void *uva_host_ptr_ = nullptr;
   void **uva_device_ptrs_data_ = nullptr;
   thrust::host_vector<void *> uva_device_ptrs_;
 
   void *wrapper_ptr_ = nullptr;
-
-  torch::Tensor host_tensor_;
 };
 }  // namespace dgs
 
