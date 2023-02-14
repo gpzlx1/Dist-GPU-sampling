@@ -21,7 +21,7 @@ create_dgs_communicator(dist.get_world_size(local_subgroup),
                         dist.get_rank(local_subgroup), local_subgroup)
 
 c_a = torch.classes.dgs_classes.ChunkTensor([100], torch.int64, 100)
-if dist.get_rank() == 0:
+if dist.get_rank(local_subgroup) == 0:
     a = torch.arange(100).long()
     c_a._CAPI_load_from_tensor(a)
 
