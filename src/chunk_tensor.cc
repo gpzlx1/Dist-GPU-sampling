@@ -73,8 +73,9 @@ ChunkTensor::ChunkTensor(std::vector<int64_t> shapes, torch::ScalarType dtype,
   if (host_elem_size_ > 0) {
     if (local_rank_ == 0) {
       // malloc shared memory for read and write
-      shmid = shmget((key_t)0x12345, host_elem_size_ * dtype_size_t_,
-                     IPC_CREAT | IPC_EXCL | 0666);
+      shmid =
+          shmget((key_t)0x6277 + std::rand(), host_elem_size_ * dtype_size_t_,
+                 IPC_CREAT | IPC_EXCL | 0666);
       SHM_CHECK(shmid);
     }
 
