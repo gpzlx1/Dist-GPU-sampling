@@ -25,13 +25,14 @@ struct chunk_tensor_wrapper {
     local_rank_ = local_rank;
     host_ptr_ = host_ptr;
     device_ptrs_ = device_ptrs;
+    CHECK(threshold_ == each_partion_size_ * num_partitions_);
   }
 
   ~chunk_tensor_wrapper(){};
 
   __device__ inline ValueType At(int64_t index) {
     if (index >= threshold_) {
-      return reinterpret_cast<ValueType *>(host_ptr_)[index];
+      return reinterpret_cast<ValueType *>(host_ptr_)[index - threshold_];
     } else {
       int partition_idx = index / each_partion_size_;
       return reinterpret_cast<ValueType *>(
@@ -53,7 +54,7 @@ struct chunk_tensor_wrapper {
   }
 
   __device__ inline ValueType HostAt(int64_t index) {
-    return reinterpret_cast<ValueType *>(host_ptr_)[index];
+    return reinterpret_cast<ValueType *>(host_ptr_)[index - threshold_];
   }
 };
 
