@@ -18,17 +18,17 @@ class CUDAContext {
     void* p = nullptr;
     if (nbytes > 0) {
       CUDA_CALL(cudaMalloc(&p, nbytes));
+      ptr_size_dir_[reinterpret_cast<int64_t>(p)] = nbytes;
+      _increase(nbytes);
     }
-    ptr_size_dir_[reinterpret_cast<int64_t>(p)] = nbytes;
-    _increase(nbytes);
     return p;
   }
 
   void raw_delete(void* p) {
     int64_t nbytes = ptr_size_dir_[reinterpret_cast<int64_t>(p)];
-    _decrease(nbytes);
     if (nbytes > 0) {
       CUDA_CALL(cudaFree(p));
+      _decrease(nbytes);
     }
   }
 
