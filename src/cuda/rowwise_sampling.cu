@@ -1,14 +1,15 @@
 #include <curand_kernel.h>
 #include <torch/script.h>
 
+#include "../cuda_common.h"
+#include "../dgs_headers.h"
 #include "atomic.h"
 #include "cub_function.h"
-#include "cuda_common.h"
 #include "dgs_ops.h"
 
 #define BLOCK_SIZE 128
 namespace dgs {
-
+namespace cuda {
 template <typename IdType>
 inline torch::Tensor _GetSubIndptr(torch::Tensor seeds, torch::Tensor indptr,
                                    int64_t num_pick, bool replace) {
@@ -41,9 +42,11 @@ inline torch::Tensor _GetSubIndptr(torch::Tensor seeds, torch::Tensor indptr,
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, const IdType *const in_ptr,
-    const IdType *const in_index, const IdType *const out_ptr,
-    IdType *const out_rows, IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    const IdType *__restrict__ const in_ptr,
+    const IdType *__restrict__ const in_index,
+    const IdType *__restrict__ const out_ptr,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -98,9 +101,11 @@ __global__ void _CSRRowWiseSampleUniformKernel(
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformReplaceKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, const IdType *const in_ptr,
-    const IdType *const in_index, const IdType *const out_ptr,
-    IdType *const out_rows, IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    const IdType *__restrict__ const in_ptr,
+    const IdType *__restrict__ const in_index,
+    const IdType *__restrict__ const out_ptr,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -168,7 +173,7 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniformCUDA(
   return std::make_tuple(coo_row, coo_col);
 }
 
-std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniform(
+std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniformCUDA(
     torch::Tensor seeds, torch::Tensor indptr, torch::Tensor indices,
     int64_t num_picks, bool replace) {
   CHECK_CUDA(seeds);
@@ -180,4 +185,5 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniform(
   });
   return std::make_tuple(torch::Tensor(), torch::Tensor());
 }
+}  // namespace cuda
 }  // namespace dgs

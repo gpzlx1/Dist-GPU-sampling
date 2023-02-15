@@ -1,13 +1,16 @@
 #include <torch/script.h>
+#include "../cuda_common.h"
+#include "../dgs_headers.h"
 #include "atomic.h"
-#include "cuda_common.h"
 #include "dgs_ops.h"
 
 #define BLOCK_SIZE 128
 namespace dgs {
+namespace cuda {
 template <typename IdType>
 struct Hashmap {
-  __device__ inline Hashmap(IdType *Kptr, IdType *Vptr, size_t numel)
+  __device__ inline Hashmap(IdType *__restrict__ Kptr,
+                            IdType *__restrict__ Vptr, size_t numel)
       : kptr(Kptr), vptr(Vptr), capacity(numel){};
 
   __device__ inline void Update(IdType key, IdType value) {
@@ -88,7 +91,7 @@ inline int _UpPower(int key) {
   return ret;
 }
 
-std::tuple<torch::Tensor, torch::Tensor> CreateHashMapTensor(
+std::tuple<torch::Tensor, torch::Tensor> CreateHashMapTensorCUDA(
     torch::Tensor input_key, torch::Tensor input_value) {
   CHECK_CUDA(input_key);
   CHECK_CUDA(input_value);
@@ -121,11 +124,14 @@ std::tuple<torch::Tensor, torch::Tensor> CreateHashMapTensor(
 }
 
 template <typename IdType, typename FloatType, int TILE_SIZE>
-__global__ void _FetchDataKernel(
-    const int64_t num_nids, const int64_t dir_size, const int64_t data_dim,
-    const IdType *const in_nids, const FloatType *const cpu_data,
-    const FloatType *const gpu_data, IdType *const hashed_key,
-    IdType *const hashed_value, FloatType *const out_data) {
+__global__ void _FetchDataKernel(const int64_t num_nids, const int64_t dir_size,
+                                 const int64_t data_dim,
+                                 const IdType *__restrict__ const in_nids,
+                                 const FloatType *__restrict__ const cpu_data,
+                                 const FloatType *__restrict__ const gpu_data,
+                                 IdType *__restrict__ const hashed_key,
+                                 IdType *__restrict__ const hashed_value,
+                                 FloatType *__restrict__ const out_data) {
   assert(blockDim.x == BLOCK_SIZE);
 
   int64_t out_node = blockIdx.x * TILE_SIZE;
@@ -155,9 +161,12 @@ __global__ void _FetchDataKernel(
 template <typename IdType, typename FloatType, int TILE_SIZE>
 __global__ void _FetchDataWithChunkTensorKernel(
     const int64_t num_nids, const int64_t dir_size, const int64_t data_dim,
-    const IdType *const in_nids, const FloatType *const cpu_data,
-    chunk_tensor_wrapper<FloatType> *gpu_data, IdType *const hashed_key,
-    IdType *const hashed_value, FloatType *const out_data) {
+    const IdType *__restrict__ const in_nids,
+    const FloatType *__restrict__ const cpu_data,
+    chunk_tensor_wrapper<FloatType> *__restrict__ gpu_data,
+    IdType *__restrict__ const hashed_key,
+    IdType *__restrict__ const hashed_value,
+    FloatType *__restrict__ const out_data) {
   assert(blockDim.x == BLOCK_SIZE);
 
   int64_t out_node = blockIdx.x * TILE_SIZE;
@@ -184,9 +193,9 @@ __global__ void _FetchDataWithChunkTensorKernel(
   }
 }
 
-torch::Tensor FetchData(torch::Tensor cpu_data, torch::Tensor gpu_data,
-                        torch::Tensor nid, torch::Tensor hashed_key_tensor,
-                        torch::Tensor hashed_value_tensor) {
+torch::Tensor FetchDataCUDA(torch::Tensor cpu_data, torch::Tensor gpu_data,
+                            torch::Tensor nid, torch::Tensor hashed_key_tensor,
+                            torch::Tensor hashed_value_tensor) {
   CHECK_CUDA(gpu_data);
   CHECK_CUDA(nid);
   CHECK_CUDA(hashed_key_tensor);
@@ -216,11 +225,10 @@ torch::Tensor FetchData(torch::Tensor cpu_data, torch::Tensor gpu_data,
   return torch::Tensor();
 }
 
-torch::Tensor FetchDataWithChunkTensor(torch::Tensor cpu_data,
-                                       c10::intrusive_ptr<ChunkTensor> gpu_data,
-                                       torch::Tensor nid,
-                                       torch::Tensor hashed_key_tensor,
-                                       torch::Tensor hashed_value_tensor) {
+torch::Tensor FetchDataWithChunkTensorCUDA(
+    torch::Tensor cpu_data, c10::intrusive_ptr<ChunkTensor> gpu_data,
+    torch::Tensor nid, torch::Tensor hashed_key_tensor,
+    torch::Tensor hashed_value_tensor) {
   CHECK_CUDA(nid);
   CHECK_CUDA(hashed_key_tensor);
   CHECK_CUDA(hashed_value_tensor);
@@ -234,7 +242,7 @@ torch::Tensor FetchDataWithChunkTensor(torch::Tensor cpu_data,
           torch::TensorOptions().dtype(cpu_data.dtype()).device(torch::kCUDA));
       chunk_tensor_wrapper<FloatType> *gpu_data_wrapper_ptr =
           reinterpret_cast<chunk_tensor_wrapper<FloatType> *>(
-              gpu_data->wrapper_ptr_);
+              gpu_data->wrapper_chunktensor_ptr_);
       constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
       const dim3 block(BLOCK_SIZE);
       const dim3 grid((num_items + TILE_SIZE - 1) / TILE_SIZE);
@@ -253,4 +261,5 @@ torch::Tensor FetchDataWithChunkTensor(torch::Tensor cpu_data,
   return torch::Tensor();
 }
 
+}  // namespace cuda
 }  // namespace dgs

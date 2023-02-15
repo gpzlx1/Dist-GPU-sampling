@@ -1,14 +1,15 @@
 #include <curand_kernel.h>
 #include <torch/script.h>
 
+#include "../cuda_common.h"
+#include "../dgs_headers.h"
 #include "cub_function.h"
-#include "cuda_common.h"
 #include "dgs_ops.h"
 #include "warpselect/WarpSelect.cuh"
 
 #define BLOCK_SIZE 128
 namespace dgs {
-
+namespace cuda {
 template <typename IdType>
 inline std::pair<torch::Tensor, torch::Tensor> _GetSubAndTempIndptr(
     torch::Tensor seeds, torch::Tensor indptr, int64_t num_pick, bool replace) {
@@ -54,10 +55,12 @@ template <typename IdType, typename FloatType, int TILE_SIZE, int BLOCK_WARPS,
           int WARP_SIZE, int NumWarpQ, int NumThreadQ>
 __global__ void _CSRRowWiseSampleKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, const IdType *const in_ptr,
-    const IdType *const in_cols, const FloatType *const prob,
-    const IdType *const out_ptr, IdType *const out_rows,
-    IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    const IdType *__restrict__ const in_ptr,
+    const IdType *__restrict__ const in_cols,
+    const FloatType *__restrict__ const prob,
+    const IdType *__restrict__ const out_ptr,
+    IdType *__restrict__ const out_rows, IdType *const out_cols) {
   // we assign one warp per row
   assert(num_picks <= 32);
   assert(blockDim.x == WARP_SIZE);
@@ -138,10 +141,13 @@ template <typename IdType, typename FloatType, int TILE_SIZE, int BLOCK_WARPS,
           int WARP_SIZE>
 __global__ void _CSRRowWiseSampleReplaceKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, const IdType *const in_ptr,
-    const IdType *const in_cols, const FloatType *const prob,
-    const IdType *const out_ptr, const IdType *const cdf_ptr,
-    FloatType *const cdf, IdType *const out_rows, IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    const IdType *__restrict__ const in_ptr,
+    const IdType *__restrict__ const in_cols,
+    const FloatType *__restrict__ const prob,
+    const IdType *__restrict__ const out_ptr,
+    const IdType *__restrict__ const cdf_ptr, FloatType *__restrict__ const cdf,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == WARP_SIZE);
   assert(blockDim.y == BLOCK_WARPS);
@@ -258,7 +264,7 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingProbCUDA(
   return std::make_tuple(coo_row, coo_col);
 }
 
-std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingProb(
+std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingProbCUDA(
     torch::Tensor seeds, torch::Tensor indptr, torch::Tensor indices,
     torch::Tensor probs, int64_t num_picks, bool replace) {
   CHECK_CUDA(seeds);
@@ -274,4 +280,5 @@ std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingProb(
 
   return std::make_tuple(torch::Tensor(), torch::Tensor());
 }
+}  // namespace cuda
 }  // namespace dgs

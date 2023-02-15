@@ -1,22 +1,26 @@
 #include <curand_kernel.h>
 #include <torch/script.h>
 
+#include "../cuda_common.h"
+#include "../dgs_headers.h"
 #include "atomic.h"
 #include "cub_function.h"
-#include "cuda_common.h"
 #include "dgs_ops.h"
 
 #define BLOCK_SIZE 128
 
 namespace dgs {
+namespace cuda {
 
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
-    const IdType *const out_ptr, const IdType *const row_begin,
-    const IdType *const row_end, IdType *const out_rows,
-    IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    chunk_tensor_wrapper<IdType> *__restrict__ in_index,
+    const IdType *__restrict__ const out_ptr,
+    const IdType *__restrict__ const row_begin,
+    const IdType *__restrict__ const row_end,
+    IdType *__restrict__ const out_rows, IdType *__restrict__ const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -71,10 +75,12 @@ __global__ void _CSRRowWiseSampleUniformKernel(
 template <typename IdType, int TILE_SIZE>
 __global__ void _CSRRowWiseSampleUniformReplaceKernel(
     const uint64_t rand_seed, const int64_t num_picks, const int64_t num_rows,
-    const IdType *const in_rows, chunk_tensor_wrapper<IdType> *in_index,
-    const IdType *const out_ptr, const IdType *const row_begin,
-    const IdType *const row_end, IdType *const out_rows,
-    IdType *const out_cols) {
+    const IdType *__restrict__ const in_rows,
+    chunk_tensor_wrapper<IdType> *__restrict__ in_index,
+    const IdType *__restrict__ const out_ptr,
+    const IdType *__restrict__ const row_begin,
+    const IdType *__restrict__ const row_end,
+    IdType *__restrict__ const out_rows, IdType *const out_cols) {
   // we assign one warp per row
   assert(blockDim.x == BLOCK_SIZE);
 
@@ -111,20 +117,22 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
     c10::intrusive_ptr<ChunkTensor> indices, int64_t num_picks, bool replace) {
   CHECK_CUDA(seeds);
   chunk_tensor_wrapper<IdType> *d_indptr_wrapper_ptr =
-      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(indptr->wrapper_ptr_);
+      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(
+          indptr->wrapper_chunktensor_ptr_);
   chunk_tensor_wrapper<IdType> *d_indices_wrapper_ptr =
-      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(indices->wrapper_ptr_);
+      reinterpret_cast<chunk_tensor_wrapper<IdType> *>(
+          indices->wrapper_chunktensor_ptr_);
 
   int num_items = seeds.numel();
   torch::Tensor row_begin_tensor = torch::empty(
       num_items,
-      torch::TensorOptions().dtype(indptr->type_).device(torch::kCUDA));
+      torch::TensorOptions().dtype(indptr->dtype_).device(torch::kCUDA));
   torch::Tensor row_end_tensor = torch::empty(
       num_items,
-      torch::TensorOptions().dtype(indptr->type_).device(torch::kCUDA));
+      torch::TensorOptions().dtype(indptr->dtype_).device(torch::kCUDA));
   torch::Tensor sub_indptr = torch::empty(
       (num_items + 1),
-      torch::TensorOptions().dtype(indptr->type_).device(torch::kCUDA));
+      torch::TensorOptions().dtype(indptr->dtype_).device(torch::kCUDA));
   using it = thrust::counting_iterator<IdType>;
   thrust::for_each(
       thrust::device, it(0), it(num_items),
@@ -149,7 +157,7 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
 
   torch::Tensor coo_row = torch::empty(nnz, seeds.options());
   torch::Tensor coo_col = torch::empty(
-      nnz, torch::TensorOptions().dtype(indices->type_).device(torch::kCUDA));
+      nnz, torch::TensorOptions().dtype(indices->dtype_).device(torch::kCUDA));
 
   const uint64_t random_seed = 7777;
   constexpr int TILE_SIZE = 128 / BLOCK_SIZE;
@@ -174,13 +182,15 @@ RowWiseSamplingUniformCUDAWithChunkTensorCUDA(
   return std::make_tuple(coo_row, coo_col);
 }
 
-std::tuple<torch::Tensor, torch::Tensor> RowWiseSamplingUniformWithChunkTensor(
+std::tuple<torch::Tensor, torch::Tensor>
+RowWiseSamplingUniformWithChunkTensorCUDA(
     torch::Tensor seeds, c10::intrusive_ptr<ChunkTensor> indptr,
     c10::intrusive_ptr<ChunkTensor> indices, int64_t num_picks, bool replace) {
-  DGS_ID_TYPE_SWITCH(indptr->type_, IdType, {
+  DGS_ID_TYPE_SWITCH(indptr->dtype_, IdType, {
     return RowWiseSamplingUniformCUDAWithChunkTensorCUDA<IdType>(
         seeds, indptr, indices, num_picks, replace);
   });
   return std::make_tuple(torch::Tensor(), torch::Tensor());
 }
+}  // namespace cuda
 }  // namespace dgs
