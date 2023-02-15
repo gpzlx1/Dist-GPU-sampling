@@ -35,7 +35,7 @@ inline size_t _getTensorSizeInByte(torch::Tensor data) {
 ChunkTensor::ChunkTensor(std::vector<int64_t> shapes, torch::ScalarType dtype,
                          int64_t capacity_per_gpu) {
   CHECK(shapes.size() == 1 || shapes.size() == 2);
-  CHECK(capacity_per_gpu > 0);
+  CHECK(capacity_per_gpu >= 0);
 
   local_rank_ = nccl::local_rank;
   num_partitions_ = nccl::world_size;
