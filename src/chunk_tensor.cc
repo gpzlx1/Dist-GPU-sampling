@@ -247,13 +247,15 @@ void ChunkTensor::_Free() {
   }
 
   // detach GPU shared memory;
-  if (num_partitions_ > 1 && device_elem_size_ > 0) {
-    for (int i = 0; i < num_partitions_; i++) {
-      if (local_rank_ != i) CUDA_CALL(cudaIpcCloseMemHandle(device_ptrs_[i]);)
+  if (device_elem_size_ > 0) {
+    if (num_partitions_ > 1) {
+      for (int i = 0; i < num_partitions_; i++) {
+        if (local_rank_ != i) CUDA_CALL(cudaIpcCloseMemHandle(device_ptrs_[i]);)
+      }
     }
+    nccl::_Barrier();
+    CUDAContext::cuda_context.raw_delete(device_ptrs_[local_rank_]);
   }
-  nccl::_Barrier();
-  CUDAContext::cuda_context.raw_delete(device_ptrs_[local_rank_]);
 }
 
 }  // namespace dgs
