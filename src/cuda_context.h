@@ -26,7 +26,6 @@ class CUDAContext {
 
   void raw_delete(void* p) {
     int64_t nbytes = ptr_size_dir_[reinterpret_cast<int64_t>(p)];
-    ptr_size_dir_.erase(reinterpret_cast<int64_t>(p));
     _decrease(nbytes);
     if (nbytes > 0) {
       CUDA_CALL(cudaFree(p));
