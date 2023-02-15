@@ -35,7 +35,7 @@ inline size_t _getTensorSizeInByte(torch::Tensor data) {
 ChunkTensor::ChunkTensor(std::vector<int64_t> shapes, torch::ScalarType dtype,
                          int64_t capacity_per_gpu) {
   CHECK(shapes.size() == 1 || shapes.size() == 2);
-  CHECK(capacity_per_gpu > 0);
+  CHECK(capacity_per_gpu >= 0);
 
   local_rank_ = nccl::local_rank;
   num_partitions_ = nccl::world_size;
@@ -158,9 +158,12 @@ torch::Tensor ChunkTensor::GetHostTensor() {
 }
 
 torch::Tensor ChunkTensor::GetSubDeviceTensor() {
-  return torch::from_blob(
-      device_ptrs_[local_rank_], device_elem_size_,
-      torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
+  if (device_elem_size_ > 0) {
+    return torch::from_blob(
+        device_ptrs_[local_rank_], device_elem_size_,
+        torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
+  }
+  return torch::Tensor();
 };
 
 void ChunkTensor::LoadFromTensor(torch::Tensor data) {
