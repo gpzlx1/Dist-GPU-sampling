@@ -158,9 +158,12 @@ torch::Tensor ChunkTensor::GetHostTensor() {
 }
 
 torch::Tensor ChunkTensor::GetSubDeviceTensor() {
-  return torch::from_blob(
-      device_ptrs_[local_rank_], device_elem_size_,
-      torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
+  if (device_elem_size_ > 0) {
+    return torch::from_blob(
+        device_ptrs_[local_rank_], device_elem_size_,
+        torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
+  }
+  return torch::Tensor();
 };
 
 void ChunkTensor::LoadFromTensor(torch::Tensor data) {
