@@ -64,7 +64,7 @@ tensor([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
 
 ## Single Node Benchmark
 
-See [oppo_bench/single_node](Dist-GPU-sampling/oppo_bench/single_node/README.md)
+See [oppo_bench/single_node](./oppo_bench/single_node/README.md)
 
 ## Multi Nodes BenchmarkSee 
-See [oppo_bench/multi_node](Dist-GPU-sampling/oppo_bench/multi_node/README.md)
+See [oppo_bench/multi_node](./oppo_bench/multi_node/README.md)
