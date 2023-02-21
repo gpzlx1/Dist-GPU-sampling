@@ -20,10 +20,15 @@ torch.cuda.set_device(dist.get_rank(local_subgroup))
 create_dgs_communicator(dist.get_world_size(local_subgroup),
                         dist.get_rank(local_subgroup), local_subgroup)
 
-c_a = torch.classes.dgs_classes.ChunkTensor([100], torch.int64, 100)
+print("[rank={}] Create ChunkTensor".format(dist.get_rank(local_subgroup)))
+c_a = torch.classes.dgs_classes.ChunkTensor([100], torch.int64, 200)
 if dist.get_rank(local_subgroup) == 0:
+    print("[rank={}] Load data".format(dist.get_rank(local_subgroup)))
     a = torch.arange(100).long()
     c_a._CAPI_load_from_tensor(a)
 
+print("[rank={}] Print HostTensor in ChunkTensor:".format(dist.get_rank(local_subgroup)))
 print(c_a._CAPI_get_host_tensor())
+
+print("[rank={}] Print DeviceTensor in ChunkTensor:".format(dist.get_rank(local_subgroup)))
 print(c_a._CAPI_get_sub_device_tensor())
