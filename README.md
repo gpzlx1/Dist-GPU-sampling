@@ -1,7 +1,17 @@
 # Dist-GPU-sampling
 
 ## ChunkTensor
+```Hybrid-Memory Graph Store (HMGStore)``` supports using memory from different GPUs and CPU as a shared memory system. Based on `HMGStore`, we develop `ChunkTensor` which enable storing graph dataset cross different devices and host to reduce data transmission and improve GNN training performance.
 
+A case for ChunkTensor usage:
+```python
+c_a = torch.classes.dgs_classes.ChunkTensor([100], torch.int64, capacity_per_gpu=200)
+if dist.get_rank(local_subgroup) == 0:
+    a = torch.arange(100).long()
+    c_a._CAPI_load_from_tensor(a)
+```
+
+Note: Currently, this repo is only supported on systems where the GPUs have peer-to-peer access.
 
 ## Install 
 Requirement:
@@ -54,4 +64,7 @@ tensor([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
 
 ## Single Node Benchmark
 
-## Multi Nodes Benchmark
+See [oppo_bench/single_node](Dist-GPU-sampling/oppo_bench/single_node/README.md)
+
+## Multi Nodes BenchmarkSee 
+See [oppo_bench/multi_node](Dist-GPU-sampling/oppo_bench/multi_node/README.md)
