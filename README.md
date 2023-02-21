@@ -11,7 +11,7 @@ if dist.get_rank(local_subgroup) == 0:
     c_a._CAPI_load_from_tensor(a)
 ```
 
-Note: Currently, this repo is only supported on systems where the GPUs have peer-to-peer access.
+Note: Currently, this repo is only supported on systems where the GPUs have peer-to-peer access to each other.
 
 ## Install 
 Requirement:
