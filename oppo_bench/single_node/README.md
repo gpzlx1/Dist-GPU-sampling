@@ -22,6 +22,8 @@
 
 - ogbn-papers400M
 
+Notes: To generate `obgn-papers400M`, you should prepare `ogbn-papers100M`.
+
 ## How to run
 
 ### Baseline
