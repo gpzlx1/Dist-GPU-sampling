@@ -109,6 +109,9 @@ These 2 methods need different args:
 
 - Compress features by quantization
 
+  To support feature quantization, you need to install [
+GPU-Feature-Quantization](https://github.com/CommediaJW/GPU-Feature-Quantization)
+
   ```bash
   python3 chunktensor.py \
   --num-gpu 8 \
