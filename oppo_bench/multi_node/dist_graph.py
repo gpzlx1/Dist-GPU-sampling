@@ -6,9 +6,17 @@ from utils.chunktensor_sampler import get_available_memory
 
 class DistGraph(object):
 
-    def __init__(self, libdgs_path, graph_path, graph_name, root, rank,
-                 world_group, cached_feature_name, feat_cache_rate,
-                 graph_cache_rate):
+    def __init__(self,
+                 libdgs_path,
+                 graph_path,
+                 graph_name,
+                 root,
+                 rank,
+                 world_group,
+                 cached_feature_name,
+                 feat_cache_rate,
+                 graph_cache_rate,
+                 with_bias=False):
         torch.ops.load_library(libdgs_path)
 
         self._tmp = {}
@@ -37,6 +45,9 @@ class DistGraph(object):
                 g, num_labels = load_ogb("ogbn-papers100M", root=graph_path)
             elif graph_name == "ogbn-papers400M":
                 g, num_labels = load_papers400m_sparse(root=graph_path)
+
+            if with_bias:
+                g.edata['probs'] = torch.randn((g.num_edges(), )).abs().float()
 
             metadata = self._generate_meta(g, num_labels)
             self._g = g
@@ -110,7 +121,7 @@ class DistGraph(object):
         self.num_labels = metadata
 
         for key, meta in metadata.items():
-            if key.startswith('ndata/'):
+            if key.startswith('edata/') or key.startswith('ndata/'):
                 self._create_feat_chunk_tensor(key, meta)
 
     def _create_feat_chunk_tensor(self, key, meta):

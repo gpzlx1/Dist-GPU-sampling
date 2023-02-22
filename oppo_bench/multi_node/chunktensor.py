@@ -88,9 +88,15 @@ def main(args):
 
     create_dgs_communicator(args.num_gpu, local_group)
 
-    dg = DistGraph(args.libdgs, args.root, args.graph_name, 0, dist.get_rank(),
-                   local_group, ['ndata/features'], args.feat_cache_rate,
-                   args.graph_cache_rate)
+    if args.bias:
+        dg = DistGraph(args.libdgs, args.root, args.graph_name, 0,
+                       dist.get_rank(), local_group,
+                       ['ndata/features', 'edata/probs'], args.feat_cache_rate,
+                       args.graph_cache_rate, args.bias)
+    else:
+        dg = DistGraph(args.libdgs, args.root, args.graph_name, 0,
+                       dist.get_rank(), local_group, ['ndata/features'],
+                       args.feat_cache_rate, args.graph_cache_rate, args.bias)
 
     if args.model == "graphsage":
         model = DistSAGE(dg.metadata['ndata/features'][1][1], 256,
