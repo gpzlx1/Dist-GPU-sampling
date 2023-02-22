@@ -160,8 +160,9 @@ class DistGraph(object):
         for k in shape:
             total_size = total_size * k
 
-        available_mem = self._available_mem - torch.ops.dgs_ops._CAPI_get_current_allocated(
-        )
+        available_mem = max(
+            self._available_mem -
+            torch.ops.dgs_ops._CAPI_get_current_allocated(), 0)
         cached_size_per_gpu = int(
             min(
                 total_size * rate //
