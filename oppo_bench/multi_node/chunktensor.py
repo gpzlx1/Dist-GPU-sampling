@@ -19,11 +19,11 @@ def run(args, device, dist_graph, model):
     fan_out = [int(fanout) for fanout in args.fan_out.split(',')]
     if args.bias:
         sampler = ChunkTensorSampler(fan_out, dist_graph.chunk_indptr,
-                                     dist_graph.chunk_indptr,
+                                     dist_graph.chunk_indices,
                                      dist_graph.edata['probs'])
     else:
         sampler = ChunkTensorSampler(fan_out, dist_graph.chunk_indptr,
-                                     dist_graph.chunk_indptr)
+                                     dist_graph.chunk_indices)
 
     # Unpack data
     train_nid = dist_graph.ndata['train_ids']._CAPI_get_host_tensor()
@@ -41,24 +41,23 @@ def run(args, device, dist_graph, model):
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
 
     # Training loop
+    print("Begin Training")
     iteration_time_log = []
     for epoch in range(args.num_epochs):
         th.cuda.synchronize()
         start = time.time()
         with model.join():
             for it, seeds in enumerate(train_seedloader):
-                print(seeds)
-                return
-                '''
-                output_nodes, input_nodes, blocks = sampler.sample_blocks(
-                    seeds)
-                batch_inputs = dist_graph.ndata['features']._CAPI_index(
-                    input_nodes).to(device)
-                batch_labels = dist_graph.ndata['labels']._CAPI_index(
-                    output_nodes).to(device)
+                frontier, seed_nodes, blocks = sampler.sample_blocks(seeds)
+                frontier = frontier.cuda()
+                seed_nodes = seed_nodes.cuda()
                 blocks = [block.to(device) for block in blocks]
+                batch_inputs = dist_graph.ndata['features']._CAPI_index(
+                    frontier).to(device)
+                batch_labels = dist_graph.ndata['labels']._CAPI_index(
+                    seed_nodes).to(device).reshape(-1)
                 batch_pred = model(blocks, batch_inputs)
-                loss = loss_fcn(batch_pred, batch_labels)
+                loss = loss_fcn(batch_pred, batch_labels.long())
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -68,11 +67,11 @@ def run(args, device, dist_graph, model):
                 iteration_time_log.append(end - start)
 
                 start = time.time()
-                '''
+
     avg_iteration_time = np.mean(iteration_time_log[5:])
     print(
         "Part {} | Model {} | Fan out {} | Sampling with bias {} | Iteration Time {:.4f} ms | Throughput {:.3f} seeds/sec"
-        .format(g.rank(), args.model, args.fan_out, args.bias,
+        .format(dist.get_rank(), args.model, args.fan_out, args.bias,
                 avg_iteration_time * 1000,
                 args.batch_size / avg_iteration_time))
 

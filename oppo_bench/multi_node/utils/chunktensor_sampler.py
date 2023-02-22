@@ -103,9 +103,6 @@ class ChunkTensorSampler(BlockSampler):
                     seeds, self.chunk_indptr, self.chunk_indices, fan_out,
                     self.replace)
 
-            print(coo_row)
-            print(coo_col)
-
             frontier, (coo_row,
                        coo_col) = torch.ops.dgs_ops._CAPI_tensor_relabel(
                            [seeds, coo_col], [coo_row, coo_col])
