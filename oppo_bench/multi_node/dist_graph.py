@@ -85,7 +85,9 @@ class DistGraph(object):
 
         for key, value in g.ndata.items():
             if key.endswith('mask'):
-                self._tmp[key] = torch.nonzero(value).reshape(-1)
+                _ids = torch.nonzero(value).reshape(-1)
+                _ids = _ids[torch.randperm(_ids.nelement())]
+                self._tmp[key] = _ids
                 metadata['ndata/' + key] = (self._tmp[key].dtype,
                                             list(self._tmp[key].size()))
             else:
@@ -140,12 +142,14 @@ class DistGraph(object):
         if self.rank == self.root:
             if data_type == 'ndata':
                 if key.endswith('mask'):
-                    chunktensor._CAPI_load_from_tensor(self._tmp[tensor_name])
+                    chunktensor._CAPI_load_from_tensor(
+                        self._tmp.pop(tensor_name))
                 else:
                     chunktensor._CAPI_load_from_tensor(
-                        self._g.ndata[tensor_name])
+                        self._g.ndata.pop(tensor_name))
             else:
-                chunktensor._CAPI_load_from_tensor(self._g.edata[tensor_name])
+                chunktensor._CAPI_load_from_tensor(
+                    self._g.edata.pop(tensor_name))
         torch.distributed.barrier()
 
         if data_type == 'ndata':
