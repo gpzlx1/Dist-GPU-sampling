@@ -270,7 +270,7 @@ if __name__ == '__main__':
     n_procs = min(args.num_gpu, torch.cuda.device_count())
 
     if args.bias:
-        graph.edata['probs'] = torch.randn((graph.num_edges(), )).float()
+        graph.edata['probs'] = torch.randn((graph.num_edges(), )).abs().float()
 
     feature_dim = graph.ndata["features"].shape[1]
     if args.compress_feat:

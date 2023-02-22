@@ -67,7 +67,7 @@ if __name__ == "__main__":
     ))
 
     if args.bias:
-        g.edata["probs"] = th.randn((g.num_edges(), )).float()
+        g.edata["probs"] = th.randn((g.num_edges(), )).abs().float()
 
     if args.balance_train:
         balance_ntypes = g.ndata["train_mask"]

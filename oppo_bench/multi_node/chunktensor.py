@@ -132,7 +132,7 @@ def main(args):
 
     # only rank 0 process generate the probs tensor, and broadcast it in the world
     if args.bias and rank_in_world == 0:
-        probs = th.randn((g.num_edges(), )).float()
+        probs = th.randn((g.num_edges(), )).abs().float()
         broadcast_list = [probs]
     else:
         broadcast_list = [None]
