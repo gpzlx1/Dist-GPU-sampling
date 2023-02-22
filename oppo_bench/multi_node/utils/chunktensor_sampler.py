@@ -90,7 +90,7 @@ class ChunkTensorSampler(BlockSampler):
         if self.chunk_probs is not None:
             del self.chunk_probs
 
-    def sample_blocks(self, g, seed_nodes, exclude_eids=None):
+    def sample_blocks(self, seed_nodes, exclude_eids=None):
         seeds = seed_nodes.cuda()
         blocks = []
         for fan_out in reversed(self.fanouts):
@@ -102,6 +102,9 @@ class ChunkTensorSampler(BlockSampler):
                 coo_row, coo_col = torch.ops.dgs_ops._CAPI_sample_neighbors_with_chunk_tensor(
                     seeds, self.chunk_indptr, self.chunk_indices, fan_out,
                     self.replace)
+
+            print(coo_row)
+            print(coo_col)
 
             frontier, (coo_row,
                        coo_col) = torch.ops.dgs_ops._CAPI_tensor_relabel(
