@@ -5,13 +5,16 @@ import torch as th
 import os
 import torch.nn as nn
 import torch.optim as optim
-import dgl
 from models import DistSAGE, DistGAT
-from utils.load_graph import load_papers400m_sparse, load_ogb
 from utils.chunktensor_sampler import *
 from utils.dataloader import SeedGenerator
-import json
+
 from dist_graph import DistGraph
+
+# Set environment variables
+LOCAL_RANK = int(os.environ['LOCAL_RANK'])
+WORLD_SIZE = int(os.environ['WORLD_SIZE'])
+WORLD_RANK = int(os.environ['RANK'])
 
 
 def run(args, device, dist_graph, model):
@@ -27,9 +30,8 @@ def run(args, device, dist_graph, model):
 
     # Unpack data
     train_nid = dist_graph.ndata['train_ids']._CAPI_get_host_tensor()
-    part = (train_nid.numel() + dist.get_world_size() -
-            1) // dist.get_world_size()
-    train_nid = train_nid[part * dist.get_rank():part * (dist.get_rank() + 1)]
+    part = (train_nid.numel() + WORLD_SIZE - 1) // WORLD_SIZE
+    train_nid = train_nid[part * WORLD_RANK:part * (WORLD_RANK + 1)]
 
     train_seedloader = SeedGenerator(train_nid,
                                      batch_size=args.batch_size,
@@ -77,28 +79,29 @@ def run(args, device, dist_graph, model):
 
 
 def main(args):
-    dist.init_process_group(backend='nccl', init_method="env://")
+    dist.init_process_group(backend='nccl',
+                            init_method="env://",
+                            rank=WORLD_RANK,
+                            world_size=WORLD_SIZE)
     th.ops.load_library(args.libdgs)
     local_group, groups = th.distributed.new_subgroups(args.num_gpu)
-    rank_in_world = dist.get_rank()
 
     dev_id = dist.get_rank(local_group)
-    torch.cuda.set_device(dev_id)
+    torch.cuda.set_device(LOCAL_RANK)
     device = torch.cuda.current_device()
 
     create_dgs_communicator(args.num_gpu, local_group)
 
     if args.bias:
         dg = DistGraph(args.libdgs, args.root, args.graph_name,
-                       dist.get_rank() - dist.get_rank() % args.num_gpu,
-                       dist.get_rank(), local_group,
-                       ['ndata/features', 'edata/probs'], args.feat_cache_rate,
-                       args.graph_cache_rate, args.bias)
+                       WORLD_RANK - WORLD_RANK % args.num_gpu, WORLD_RANK,
+                       local_group, ['ndata/features', 'edata/probs'],
+                       args.feat_cache_rate, args.graph_cache_rate, args.bias)
     else:
         dg = DistGraph(args.libdgs, args.root, args.graph_name,
-                       dist.get_rank() - dist.get_rank() % args.num_gpu,
-                       dist.get_rank(), local_group, ['ndata/features'],
-                       args.feat_cache_rate, args.graph_cache_rate, args.bias)
+                       WORLD_RANK - WORLD_RANK % args.num_gpu, WORLD_RANK,
+                       local_group, ['ndata/features'], args.feat_cache_rate,
+                       args.graph_cache_rate, args.bias)
 
     if args.model == "graphsage":
         model = DistSAGE(dg.metadata['ndata/features'][1][1], 256,
