@@ -71,14 +71,16 @@ def run(args, device, dist_graph, model):
                 start = time.time()
 
     avg_iteration_time = np.mean(iteration_time_log[5:])
-    print(
-        "Part {} | Model {} | Fan out {} | Sampling with bias {} | Iteration Time {:.4f} ms | Throughput {:.3f} seeds/sec"
-        .format(dist.get_rank(), args.model, args.fan_out, args.bias,
-                avg_iteration_time * 1000,
-                args.batch_size / avg_iteration_time))
+    print("Part {} | Iteration Time {:.4f} ms | Throughput {:.3f} seeds/sec".
+          format(dist.get_rank(), args.model, args.fan_out, args.bias,
+                 avg_iteration_time * 1000,
+                 args.batch_size / avg_iteration_time))
 
 
 def main(args):
+    if LOCAL_RANK == 0:
+        print(args)
+
     dist.init_process_group(backend='nccl',
                             init_method="env://",
                             rank=WORLD_RANK,
@@ -128,17 +130,10 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--graph_name", type=str, help="graph name")
-    parser.add_argument("--id", type=int, help="the partition id")
-    parser.add_argument("--ip_config",
-                        type=str,
-                        help="The file for IP configuration")
     parser.add_argument("--num_gpu",
                         type=int,
                         default=1,
                         help="the number of GPU device.")
-    parser.add_argument("--part_config",
-                        type=str,
-                        help="The path to the partition config file")
     parser.add_argument("--model",
                         default="graphsage",
                         choices=["graphsage", "gat"],
@@ -153,31 +148,23 @@ if __name__ == "__main__":
     parser.add_argument('--root',
                         default='dataset/',
                         help='Path of the dataset.')
-    parser.add_argument("--local_rank",
-                        type=int,
-                        help="get rank of the process")
     parser.add_argument('--libdgs',
                         default='../Dist-GPU-sampling/build/libdgs.so',
                         help='Path of libdgs.so')
     parser.add_argument(
-        '--feat-cache-rate',
+        '--feat_cache_rate',
         default='1',
         type=float,
         help=
         'The gpu cache rate of features. If the gpu memory is not enough, cache priority: features > probs > indices > indptr'
     )
     parser.add_argument(
-        '--graph-cache-rate',
+        '--graph_cache_rate',
         default='1',
         type=float,
         help=
         'The gpu cache rate of graph structure tensors. If the gpu memory is not enough, cache priority: features > probs > indices > indptr'
     )
-    parser.add_argument(
-        '--reserved-mem',
-        default='3',
-        type=float,
-        help="The size of reserved memory (unit: GB) for model and training.")
     args = parser.parse_args()
 
     main(args)
