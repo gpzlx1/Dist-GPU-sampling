@@ -86,7 +86,7 @@ def compute_loading_factor(rank, world_size, features, valid_time_threshold,
 
         else:
             nids_size *= 10
-        
+
         if nids_size > feature_size:
             break
 
