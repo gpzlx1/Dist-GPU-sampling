@@ -90,7 +90,7 @@ class ChunkTensorSampler(BlockSampler):
         if self.chunk_probs is not None:
             del self.chunk_probs
 
-    def sample_blocks(self, g, seed_nodes, exclude_eids=None):
+    def sample_blocks(self, seed_nodes, exclude_eids=None):
         seeds = seed_nodes.cuda()
         blocks = []
         for fan_out in reversed(self.fanouts):

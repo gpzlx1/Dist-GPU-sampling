@@ -21,6 +21,8 @@ inline size_t _getTensorTypeSizeOf(torch::Dtype type) {
     return sizeof(float);
   } else if (type == torch::kDouble) {
     return sizeof(double);
+  } else if (type == torch::kBool) {
+    return sizeof(bool);
   } else {
     fprintf(stderr, "Error in _getTensorSizeInByte!\n");
     exit(-1);
@@ -148,22 +150,24 @@ ChunkTensor::ChunkTensor(std::vector<int64_t> shapes, torch::ScalarType dtype,
 
 torch::Tensor ChunkTensor::GetHostTensor() {
   if (host_ptr_ != nullptr) {
-    return torch::from_blob(
+    torch::Tensor ret = torch::from_blob(
         host_ptr_, host_elem_size_,
         torch::TensorOptions().device(torch::kCPU).dtype(dtype_));
-  } else {
-    fprintf(stderr, "HostTensor is not needed for this data!\n");
-    return torch::Tensor();
+    return ret;
   }
+  return torch::empty(0,
+                      torch::TensorOptions().device(torch::kCPU).dtype(dtype_));
 }
 
 torch::Tensor ChunkTensor::GetSubDeviceTensor() {
   if (device_elem_size_ > 0) {
-    return torch::from_blob(
+    torch::Tensor ret = torch::from_blob(
         device_ptrs_[local_rank_], device_elem_size_,
         torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
+    return ret;
   }
-  return torch::Tensor();
+  return torch::empty(
+      0, torch::TensorOptions().dtype(dtype_).device(torch::kCUDA));
 };
 
 void ChunkTensor::LoadFromTensor(torch::Tensor data) {
