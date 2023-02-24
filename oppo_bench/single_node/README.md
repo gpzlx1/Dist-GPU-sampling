@@ -1,19 +1,4 @@
 # Single node training
-
-## Dependencies
-
-- CUDA 11.3
-
-- PyTorch 1.12.1
-
-- DGL 0.9.1
-
-- NumPy 1.23.5
-
-- OGB 1.3.5
-
-- NCCL 2.10.3
-
 ## Dataset
 
 - ogbn-products
@@ -121,15 +106,15 @@ GPU-Feature-Quantization](https://github.com/CommediaJW/GPU-Feature-Quantization
   --model graphsage \
   --batch-size 1000 \
   --fan-out 15,15,15 \
-  --libdgs ../Dist-GPU-sampling/build/libdgs.so \
   --graph-cache-rate 1 \
+  --libdgs ../Dist-GPU-sampling/build/libdgs.so \
   --libbifeat ../GPU-Feature-Quantization/build/libbifeat.so \
-  --compress-feat \
-  --compress-mode vq \
-  --compress-width 12 \
-  --compress-length 1024 \
-  --compress-feat-save-root data/ \
   --bias \
+  --compress-feat \
+  --compress-mode sq \
+  --compress-length 2 \
+  --compress-feat-save-root data/ \
+  --gpu-cache-full-feat
   --print-train
   ```
 
