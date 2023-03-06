@@ -1,5 +1,8 @@
-#include "graph_relabel.h"
+#include <algorithm>
+#include <vector>
+
 #include "dgs_headers.h"
+#include "graph_relabel.h"
 
 namespace dgs {
 
@@ -58,20 +61,16 @@ GraphRelabelCSC(
     for (int64_t i = 0; i < num_nodes; i += 1) {
       IdType col_start = relabeled_indptr_data[i];
       int degree = relabeled_indptr_data[i + 1] - col_start;
-      for (int j = 0; j < degree - 1; j += 1) {
-        for (int k = j; k < degree - 1; k += 1) {
-          if (relabeled_indices_data[col_start + k] >=
-              relabeled_indices_data[col_start + k + 1]) {
-            IdType indices_swap_temp = relabeled_indices_data[col_start + k];
-            IdType eid_swap_temp = relabeled_eid_data[col_start + k];
-            relabeled_indices_data[col_start + k] =
-                relabeled_indices_data[col_start + k + 1];
-            relabeled_eid_data[col_start + k] =
-                relabeled_eid_data[col_start + k + 1];
-            relabeled_indices_data[col_start + k + 1] = indices_swap_temp;
-            relabeled_eid_data[col_start + k + 1] = eid_swap_temp;
-          }
-        }
+      std::vector<std::pair<IdType, IdType>> sort_vector;
+      for (int j = 0; j < degree; j += 1) {
+        sort_vector.push_back(
+            std::make_pair(relabeled_indices_data[col_start + j],
+                           relabeled_eid_data[col_start + j]));
+      }
+      std::sort(std::begin(sort_vector), std::end(sort_vector));
+      for (int j = 0; j < degree; j += 1) {
+        relabeled_indices_data[col_start + j] = sort_vector[j].first;
+        relabeled_eid_data[col_start + j] = sort_vector[j].second;
       }
     }
 
