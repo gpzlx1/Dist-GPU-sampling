@@ -27,8 +27,10 @@ if dist.get_rank(local_subgroup) == 0:
     a = torch.arange(100).long()
     c_a._CAPI_load_from_tensor(a)
 
-print("[rank={}] Print HostTensor in ChunkTensor:".format(dist.get_rank(local_subgroup)))
+print("[rank={}] Print HostTensor in ChunkTensor:".format(
+    dist.get_rank(local_subgroup)))
 print(c_a._CAPI_get_host_tensor())
 
-print("[rank={}] Print DeviceTensor in ChunkTensor:".format(dist.get_rank(local_subgroup)))
+print("[rank={}] Print DeviceTensor in ChunkTensor:".format(
+    dist.get_rank(local_subgroup)))
 print(c_a._CAPI_get_sub_device_tensor())

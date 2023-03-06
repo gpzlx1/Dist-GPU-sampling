@@ -1,17 +1,4 @@
 # Distributed training
-
-## Dependencies
-
-- CUDA 11.3
-
-- PyTorch 1.12.1
-
-- DGL 0.9.1
-
-- NumPy 1.23.5
-
-- OGB 1.3.5
-
 ## Dataset
 
 - ogbn-products
@@ -112,7 +99,7 @@ You can get your socket interface name with command `ifconfig -a`
 Run this command on every node of the cluster:
 
 ```shell
-torchrun --nproc_per_node 2 \
+OMP_NUM_THREADS=${#CPUs} torchrun --nproc_per_node 2 \
 --master_port 12345 \
 --nnodes=${number of nodes} \
 --node_rank=${rank of this node} \
