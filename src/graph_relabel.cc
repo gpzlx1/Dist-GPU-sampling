@@ -59,16 +59,18 @@ GraphRelabelCSC(
       IdType col_start = relabeled_indptr_data[i];
       int degree = relabeled_indptr_data[i + 1] - col_start;
       for (int j = 0; j < degree - 1; j += 1) {
-        if (relabeled_indices_data[col_start + j] >=
-            relabeled_indices_data[col_start + j + 1]) {
-          IdType indices_swap_temp = relabeled_indices_data[col_start + j];
-          IdType eid_swap_temp = relabeled_eid_data[col_start + j];
-          relabeled_indices_data[col_start + j] =
-              relabeled_indices_data[col_start + j + 1];
-          relabeled_eid_data[col_start + j] =
-              relabeled_eid_data[col_start + j + 1];
-          relabeled_indices_data[col_start + j + 1] = indices_swap_temp;
-          relabeled_eid_data[col_start + j + 1] = eid_swap_temp;
+        for (int k = j; k < degree - 1; k += 1) {
+          if (relabeled_indices_data[col_start + k] >=
+              relabeled_indices_data[col_start + k + 1]) {
+            IdType indices_swap_temp = relabeled_indices_data[col_start + k];
+            IdType eid_swap_temp = relabeled_eid_data[col_start + k];
+            relabeled_indices_data[col_start + k] =
+                relabeled_indices_data[col_start + k + 1];
+            relabeled_eid_data[col_start + k] =
+                relabeled_eid_data[col_start + k + 1];
+            relabeled_indices_data[col_start + k + 1] = indices_swap_temp;
+            relabeled_eid_data[col_start + k + 1] = eid_swap_temp;
+          }
         }
       }
     }
