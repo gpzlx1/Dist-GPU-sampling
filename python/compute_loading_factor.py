@@ -30,9 +30,12 @@ def compute_loading_factor(rank, world_size, features, valid_time_threshold,
         cache_nodes_num = int(cache_size / feature_dim /
                               features.element_size())
         chunk_features = torch.classes.dgs_classes.ChunkTensor(
-            features, cache_size)
+            features.shape, features.dtype, cache_size)
+        chunk_features._CAPI_load_from_tensor(features)
     elif option == 'host':
-        chunk_features = torch.classes.dgs_classes.ChunkTensor(features, 0)
+        chunk_features = torch.classes.dgs_classes.ChunkTensor(
+            features.shape, features.dtype, 0)
+        chunk_features._CAPI_load_from_tensor(features)
 
     nids_size = 2000
 
@@ -80,8 +83,10 @@ def compute_loading_factor(rank, world_size, features, valid_time_threshold,
             ) / 1024 / 1024 / 1024 / bandwidth * 1000
             valid_factor_log.append(fact_time / infer_time)
             valid_count += 1
-            print("rank {}, valid {}, infer time = {:.2f}, fact_time = {:.2f}".
-                  format(rank, valid_count, infer_time, fact_time))
+            print(
+                "rank {}, valid {}, #nids = {}, infer time = {:.2f}, fact_time = {:.2f}, penalty factor = {:.3f}"
+                .format(rank, valid_count, nids.numel(), infer_time, fact_time,
+                        fact_time / infer_time))
             nids_size = int(nids_size * 1.2)
 
         else:
@@ -102,7 +107,10 @@ def compute_loading_factor(rank, world_size, features, valid_time_threshold,
 
 if __name__ == '__main__':
     feature_dim = 128
-    feature_size = 20000000
+    feature_size = 10000000
+
+    print("graph num nodes", feature_size)
+    print("feature dim", feature_dim)
 
     world_size = 1
     features = torch.ones((world_size * feature_size, feature_dim)).float()

@@ -4,6 +4,7 @@
 #include "chunk_tensor.h"
 #include "cuda/dgs_ops.h"
 #include "cuda_context.h"
+#include "graph_relabel.h"
 #include "nccl_context.h"
 
 using namespace dgs;
@@ -34,5 +35,6 @@ TORCH_LIBRARY(dgs_ops, m) {
       .def("_CAPI_fetch_data_chunk_tensor", &cuda::FetchDataWithChunkTensorCUDA)
       .def("_CAPI_get_unique_id", &nccl::GetUniqueId)
       .def("_CAPI_set_nccl", &nccl::SetNCCL)
-      .def("_CAPI_get_current_allocated", &CUDAContext::GetCurrAllocated);
+      .def("_CAPI_get_current_allocated", &CUDAContext::GetCurrAllocated)
+      .def("_CAPI_csc_graph_relabel", &GraphRelabelCSC);
 }
